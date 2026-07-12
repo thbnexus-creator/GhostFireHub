@@ -59,12 +59,21 @@ export default function MarketplaceView({
   
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [loadingProducts, setLoadingProducts] = useState(true);
 
   useEffect(() => {
     if (initialSearchQuery !== undefined) {
       setSearchQuery(initialSearchQuery);
     }
   }, [initialSearchQuery]);
+
+  useEffect(() => {
+    setLoadingProducts(true);
+    const timer = setTimeout(() => {
+      setLoadingProducts(false);
+    }, 600); // Simulated delay for visual compliance skeleton
+    return () => clearTimeout(timer);
+  }, [selectedCategory, searchQuery, products]);
   
   // Favorites storage
   const [likedProductIds, setLikedProductIds] = useState<string[]>(['p1']);
@@ -911,7 +920,40 @@ export default function MarketplaceView({
           </div>
 
           {/* Product Grid */}
-          {filteredProducts.length === 0 ? (
+          {loadingProducts ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {[1, 2, 3, 4].map(idx => (
+                <div key={idx} className="bg-slate-900/20 border border-slate-850 rounded-2xl p-4 flex flex-col justify-between gap-4 animate-pulse">
+                  <div className="flex gap-3.5">
+                    {/* Visual Icon Box Skeleton */}
+                    <div className="w-14 h-14 bg-slate-950 border border-slate-850 rounded-xl shrink-0"></div>
+                    
+                    {/* Header Specs Skeleton */}
+                    <div className="flex-1 space-y-2 py-1">
+                      <div className="h-3 w-16 bg-slate-800 rounded-md"></div>
+                      <div className="h-4 w-3/4 bg-slate-800 rounded-md"></div>
+                      <div className="flex gap-1">
+                        <div className="h-3.5 w-12 bg-slate-800 rounded-md"></div>
+                        <div className="h-3.5 w-16 bg-slate-800 rounded-md"></div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Description text skeleton */}
+                  <div className="h-10 bg-slate-950/40 rounded-lg border border-slate-850/40 w-full"></div>
+                  
+                  {/* Footer details skeleton */}
+                  <div className="flex justify-between items-center pt-2 border-t border-slate-800/40">
+                    <div className="space-y-1.5">
+                      <div className="h-2.5 w-10 bg-slate-800 rounded-md"></div>
+                      <div className="h-4.5 w-20 bg-slate-800 rounded-md"></div>
+                    </div>
+                    <div className="h-7 w-24 bg-slate-800 rounded-lg"></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : filteredProducts.length === 0 ? (
             <div className="border border-dashed border-slate-800 rounded-3xl p-12 text-center text-slate-500 text-xs">
               No digital products found matching your search term. Try another filter category!
             </div>

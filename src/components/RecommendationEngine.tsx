@@ -121,10 +121,12 @@ export default function RecommendationEngine({
 
   // History state for trend chart
   const [historyData, setHistoryData] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   useEffect(() => {
     const fetchHistory = async () => {
       if (!userEmail) return;
+      setLoadingHistory(true);
       try {
         const res = await fetch(`/api/recommend/history/${encodeURIComponent(userEmail)}`);
         if (res.ok) {
@@ -133,6 +135,10 @@ export default function RecommendationEngine({
         }
       } catch (err) {
         console.error('Failed to load history for trend chart:', err);
+      } finally {
+        setTimeout(() => {
+          setLoadingHistory(false);
+        }, 500); // graceful minimal animation transition time
       }
     };
     fetchHistory();
@@ -1600,62 +1606,89 @@ export default function RecommendationEngine({
               </div>
 
               <div className="w-full h-44 md:h-48">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart
-                    data={getChartData()}
-                    margin={{ top: 5, right: 10, left: -25, bottom: 0 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                    <XAxis 
-                      dataKey="name" 
-                      stroke="#475569" 
-                      fontSize={9} 
-                      tickLine={false} 
-                    />
-                    <YAxis 
-                      domain={[50, 200]} 
-                      stroke="#475569" 
-                      fontSize={9} 
-                      tickLine={false} 
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: '#0f172a',
-                        borderColor: '#334155',
-                        borderRadius: '0.75rem',
-                        color: '#f8fafc',
-                        fontSize: '10px',
-                        fontFamily: 'sans-serif'
-                      }}
-                    />
-                    <Line 
-                      type="monotone" 
-                      dataKey="userGeneral" 
-                      name="Your General Sensi" 
-                      stroke="#f97316" 
-                      strokeWidth={2.5} 
-                      dot={{ r: 3, fill: '#f97316', strokeWidth: 0 }} 
-                      activeDot={{ r: 5 }} 
-                    />
-                    <Line 
-                      type="monotone" 
-                      dataKey="userRedDot" 
-                      name="Your Red Dot Sensi" 
-                      stroke="#10b981" 
-                      strokeWidth={2} 
-                      dot={{ r: 2.5, fill: '#10b981', strokeWidth: 0 }} 
-                    />
-                    <Line 
-                      type="monotone" 
-                      dataKey="globalAvg" 
-                      name="Global Pro Average" 
-                      stroke="#64748b" 
-                      strokeDasharray="4 4" 
-                      strokeWidth={1.5} 
-                      dot={false} 
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+                {loadingHistory ? (
+                  <div className="w-full h-full flex flex-col justify-between py-2 pl-4 pr-2 animate-pulse font-mono">
+                    <div className="flex justify-between items-center w-full">
+                      <span className="text-[8px] text-slate-700">200 —</span>
+                      <div className="h-[1px] flex-1 border-t border-dashed border-slate-850/60 mx-2"></div>
+                    </div>
+                    <div className="flex justify-between items-center w-full">
+                      <span className="text-[8px] text-slate-700">150 —</span>
+                      <div className="h-[1px] flex-1 border-t border-dashed border-slate-850/60 mx-2"></div>
+                    </div>
+                    <div className="flex justify-between items-center w-full">
+                      <span className="text-[8px] text-slate-700">100 —</span>
+                      <div className="h-[1px] flex-1 border-t border-dashed border-slate-850/60 mx-2"></div>
+                    </div>
+                    <div className="flex justify-between items-center w-full">
+                      <span className="text-[8px] text-slate-700">50 —</span>
+                      <div className="h-[1px] flex-1 border-t border-dashed border-slate-850/60 mx-2"></div>
+                    </div>
+                    <div className="flex justify-between w-full mt-2 pl-10 pr-4 text-[8px] text-slate-600">
+                      <span>Calib #1</span>
+                      <span>Calib #2</span>
+                      <span>Calib #3</span>
+                      <span>Optimized</span>
+                    </div>
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart
+                      data={getChartData()}
+                      margin={{ top: 5, right: 10, left: -25, bottom: 0 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                      <XAxis 
+                        dataKey="name" 
+                        stroke="#475569" 
+                        fontSize={9} 
+                        tickLine={false} 
+                      />
+                      <YAxis 
+                        domain={[50, 200]} 
+                        stroke="#475569" 
+                        fontSize={9} 
+                        tickLine={false} 
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: '#0f172a',
+                          borderColor: '#334155',
+                          borderRadius: '0.75rem',
+                          color: '#f8fafc',
+                          fontSize: '10px',
+                          fontFamily: 'sans-serif'
+                        }}
+                      />
+                      <Line 
+                        type="monotone" 
+                        dataKey="userGeneral" 
+                        name="Your General Sensi" 
+                        stroke="#f97316" 
+                        strokeWidth={2.5} 
+                        dot={{ r: 3, fill: '#f97316', strokeWidth: 0 }} 
+                        activeDot={{ r: 5 }} 
+                      />
+                      <Line 
+                        type="monotone" 
+                        dataKey="userRedDot" 
+                        name="Your Red Dot Sensi" 
+                        stroke="#10b981" 
+                        strokeWidth={2} 
+                        dot={{ r: 2.5, fill: '#10b981', strokeWidth: 0 }} 
+                      />
+                      <Line 
+                        type="monotone" 
+                        dataKey="globalAvg" 
+                        name="Global Pro Average" 
+                        stroke="#64748b" 
+                        strokeDasharray="4 4" 
+                        strokeWidth={1.5} 
+                        dot={false} 
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
               </div>
 
               <p className="text-[9.5px] text-slate-500 leading-relaxed font-sans">
@@ -1934,7 +1967,31 @@ export default function RecommendationEngine({
 
           {/* Preset list */}
           {loadingPresets ? (
-            <div className="text-center py-4 text-xs text-slate-500 font-mono animate-pulse">Loading presets database...</div>
+            <div className="flex flex-col gap-2">
+              {[1, 2, 3].map((n) => (
+                <div 
+                  key={n} 
+                  className="p-3.5 bg-slate-950/30 border border-slate-900 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-pulse"
+                >
+                  <div className="flex-1 space-y-2">
+                    <div className="h-4 w-32 bg-slate-850 rounded-md"></div>
+                    <div className="h-3 w-48 bg-slate-800/60 rounded-md"></div>
+                    <div className="flex gap-2">
+                      <div className="h-3.5 w-24 bg-slate-800/40 rounded border border-slate-850"></div>
+                      <div className="h-3.5 w-20 bg-slate-800/40 rounded border border-slate-850"></div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <div className="grid grid-cols-3 gap-x-2 gap-y-1 font-mono text-[9px]">
+                      {[1, 2, 3, 4, 5, 6].map((i) => (
+                        <div key={i} className="h-3 w-8 bg-slate-800/60 rounded"></div>
+                      ))}
+                    </div>
+                    <div className="h-7 w-12 bg-slate-800 rounded-lg"></div>
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : presets.length === 0 ? (
             <div className="text-center py-6 text-xs text-slate-500 bg-slate-950/20 rounded-2xl border border-slate-850">No published presets found.</div>
           ) : (
