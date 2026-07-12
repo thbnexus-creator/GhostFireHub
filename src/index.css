@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+/* High Visibility Mode overrides */
+.high-visibility {
+  background-color: #f8fafc !important; /* slate-50 */
+  color: #0f172a !important; /* slate-900 */
+}
+
+.high-visibility header {
+  background-color: rgba(255, 255, 255, 0.85) !important;
+  border-color: #cbd5e1 !important;
+}
+
+.high-visibility nav, 
+.high-visibility div[class*="bg-slate-950"], 
+.high-visibility select, 
+.high-visibility input {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+.high-visibility input::placeholder {
+  color: #94a3b8 !important;
+}
+
+.high-visibility div[class*="bg-slate-900"], 
+.high-visibility div[class*="bg-slate-900/40"], 
+.high-visibility div[class*="bg-slate-900/20"], 
+.high-visibility section[class*="from-slate-900"] {
+  background-color: #f1f5f9 !important; /* slate-100 */
+  background-image: none !important;
+  border-color: #cbd5e1 !important;
+}
+
+.high-visibility h1, 
+.high-visibility h2, 
+.high-visibility h3, 
+.high-visibility h4, 
+.high-visibility h5, 
+.high-visibility span[class*="text-white"],
+.high-visibility strong {
+  color: #0f172a !important; /* slate-900 */
+}
+
+.high-visibility span[class*="text-slate-400"], 
+.high-visibility p[class*="text-slate-400"], 
+.high-visibility label[class*="text-slate-400"],
+.high-visibility span[class*="text-slate-500"], 
+.high-visibility p[class*="text-slate-500"] {
+  color: #475569 !important; /* slate-600 */
+}
+
+.high-visibility .border-slate-850, 
+.high-visibility .border-slate-900,
+.high-visibility .border-slate-800 {
+  border-color: #e2e8f0 !important;
+}
+
+.high-visibility div[class*="bg-slate-950/20"],
+.high-visibility div[class*="bg-slate-950/80"] {
+  background-color: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+}

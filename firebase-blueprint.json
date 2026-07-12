@@ -1,0 +1,164 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account and profile details.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "description": "User email address" },
+        "username": { "type": "string", "description": "Gaming username" },
+        "favoriteWeapons": { "type": "array", "description": "List of favorite weapon IDs" },
+        "favoriteDevices": { "type": "array", "description": "List of calibrated devices" },
+        "referralCount": { "type": "number", "description": "Number of users referred" },
+        "isPremium": { "type": "boolean", "description": "Premium tier status" },
+        "savedRecommendations": { "type": "array", "description": "List of saved sensitivity recommendations" },
+        "role": { "type": "string", "description": "Role of the user, e.g. Administrator" },
+        "ghostPoints": { "type": "number", "description": "Total accrued GhostPoints" },
+        "completedMissions": { "type": "array", "description": "IDs of completed daily missions" },
+        "claimedMissions": { "type": "array", "description": "IDs of claimed daily missions" },
+        "missionProgress": { "type": "object", "description": "Progress mapping for missions" }
+      },
+      "required": ["email", "username"]
+    },
+    "Device": {
+      "title": "Gaming Device Specs",
+      "description": "Specifications of supported mobile devices.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "brand": { "type": "string" },
+        "model": { "type": "string" },
+        "os": { "type": "string" },
+        "ram": { "type": "string" },
+        "refreshRate": { "type": "string" },
+        "touchSamplingRate": { "type": "string" },
+        "resolution": { "type": "string" },
+        "screenSize": { "type": "string" },
+        "gyroscope": { "type": "boolean" }
+      },
+      "required": ["id", "brand", "model"]
+    },
+    "Weapon": {
+      "title": "Weapon Stats",
+      "description": "Base stats for weapons.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "image": { "type": "string" },
+        "baseDamage": { "type": "number" },
+        "rateOfFire": { "type": "number" },
+        "range": { "type": "number" }
+      },
+      "required": ["id", "name", "category"]
+    },
+    "MarketplaceProduct": {
+      "title": "Marketplace Product",
+      "description": "Premium config files, HUDs or services.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "price": { "type": "number" },
+        "description": { "type": "string" },
+        "rating": { "type": "number" },
+        "reviewsCount": { "type": "number" },
+        "image": { "type": "string" },
+        "featured": { "type": "boolean" }
+      },
+      "required": ["id", "name", "price"]
+    },
+    "CommunityPost": {
+      "title": "Community Section Post",
+      "description": "An announcement, guide or tournament post.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "author": { "type": "string" },
+        "category": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "likes": { "type": "number" }
+      },
+      "required": ["id", "title", "content"]
+    },
+    "HUDLayout": {
+      "title": "HUD Control Layout",
+      "description": " orientation and custom placement nodes.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "orientation": { "type": "string" },
+        "created_at": { "type": "string" },
+        "buttons": { "type": "array" }
+      },
+      "required": ["id", "name", "orientation"]
+    },
+    "AdminLog": {
+      "title": "Administrator Log",
+      "description": "Records admin actions and optimizations.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "action": { "type": "string" },
+        "details": { "type": "string" },
+        "adminEmail": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "action", "adminEmail"]
+    },
+    "Notification": {
+      "title": "User Notification",
+      "description": "Tactical in-app notifications.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "read": { "type": "boolean" },
+        "targetEmail": { "type": "string" }
+      },
+      "required": ["id", "title", "message"]
+    }
+  },
+  "firestore": {
+    "/users/{email}": {
+      "schema": "User",
+      "description": "Saves authenticated user profiles."
+    },
+    "/devices/{id}": {
+      "schema": "Device",
+      "description": "Stores gaming smartphone specifications."
+    },
+    "/weapons/{id}": {
+      "schema": "Weapon",
+      "description": "Stores weapons statistics."
+    },
+    "/marketplaceProducts/{id}": {
+      "schema": "MarketplaceProduct",
+      "description": "Stores digital files and guides."
+    },
+    "/communityPosts/{id}": {
+      "schema": "CommunityPost",
+      "description": "Stores forum and blog posts."
+    },
+    "/hudLayouts/{email}": {
+      "schema": "HUDLayout",
+      "description": "Stores player specific HUD configurations."
+    },
+    "/adminActivityLogs/{id}": {
+      "schema": "AdminLog",
+      "description": "Stores administrative actions logs."
+    },
+    "/notifications/{id}": {
+      "schema": "Notification",
+      "description": "Stores alerts and updates."
+    }
+  }
+}

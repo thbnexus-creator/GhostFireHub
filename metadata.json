@@ -1,0 +1,8 @@
+{
+  "name": "Remix: GhostFireHub",
+  "description": "Smart Sensitivity Recommendations for Every Device. Premium gaming platform that provides personalized game setting recommendations based on a player\u0027s device and preferences.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
