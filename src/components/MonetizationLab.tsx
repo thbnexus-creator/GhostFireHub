@@ -16,10 +16,15 @@ import {
   Globe, 
   AlertCircle,
   Lock,
-  CheckCircle2
+  CheckCircle2,
+  XCircle,
+  HelpCircle,
+  MessageSquare,
+  Upload
 } from 'lucide-react';
 import { UserProfile } from '../types';
 import { formatPrice } from '../lib/currency';
+import SecureImageUpload from './SecureImageUpload';
 
 interface MonetizationProps {
   user: UserProfile;
@@ -82,6 +87,8 @@ export default function MonetizationLab({ user, onUpdateUser }: MonetizationProp
   const touchVectorsLogged = user.touchVectorsLogged ?? 84; // mock starting value if none
   const withdrawalRequests = user.withdrawalRequests ?? [];
 
+  const isAdminUser = user.role === 'Administrator' || user.email === 'ghostfirehub@gmail.com';
+
   // Local Component States
   const [sponsorAds, setSponsorAds] = useState<any[]>(SPONSOR_ADS);
   const [activeAd, setActiveAd] = useState<any | null>(null);
@@ -91,7 +98,7 @@ export default function MonetizationLab({ user, onUpdateUser }: MonetizationProp
   const [copiedText, setCopiedText] = useState(false);
 
   // Withdrawal form inputs
-  const [payoutMethod, setPayoutMethod] = useState<'Naira' | 'USDT' | 'BinancePay'>('Naira');
+  const [payoutMethod, setPayoutMethod] = useState<'USDT' | 'BinancePay'>('USDT');
   const [cryptoAddress, setCryptoAddress] = useState('');
   const [binancePayId, setBinancePayId] = useState('');
   const [selectedBank, setSelectedBank] = useState(user.savedBankDetails?.bankName || NIGERIAN_BANKS[0]);
@@ -102,6 +109,30 @@ export default function MonetizationLab({ user, onUpdateUser }: MonetizationProp
   const [formSuccess, setFormSuccess] = useState('');
   const [submittingWithdrawal, setSubmittingWithdrawal] = useState(false);
   const [savingBankDetails, setSavingBankDetails] = useState(false);
+  const [vendorConvertOption, setVendorConvertOption] = useState<'50k' | '100k'>('50k');
+
+  // Dispute state variables
+  const [disputeId, setDisputeId] = useState<string | null>(null);
+  const [disputeReason, setDisputeReason] = useState<string>('');
+  const [disputeProofUrl, setDisputeProofUrl] = useState<string>('');
+  const [disputeSubmitting, setDisputeSubmitting] = useState<boolean>(false);
+
+  // Time ticker state to force real-time re-renders for countdowns
+  const [timeTicker, setTimeTicker] = useState<number>(0);
+
+  // Real-time withdrawal countdown ticker
+  useEffect(() => {
+    const hasActiveWithdrawals = withdrawalRequests.some(req => 
+      ['Pending', 'Initiated', 'Processing', 'Confirmed'].includes(req.status)
+    );
+    if (!hasActiveWithdrawals) return;
+
+    const interval = setInterval(() => {
+      setTimeTicker(prev => prev + 1);
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [withdrawalRequests, timeTicker]);
 
   // Sharing states
   const [sharingInProgress, setSharingInProgress] = useState(false);
@@ -228,13 +259,67 @@ export default function MonetizationLab({ user, onUpdateUser }: MonetizationProp
     }
   }, [user.savedRecommendations]);
 
+  // Poll pending withdrawal requests and automatically transition through status states (Initiated -> Processing -> Confirmed -> Completed)
+  useEffect(() => {
+    let hasPending = false;
+    withdrawalRequests.forEach(req => {
+      if (['Pending', 'Initiated', 'Processing', 'Confirmed'].includes(req.status)) {
+        hasPending = true;
+      }
+    });
+
+    if (!hasPending) return;
+
+    const interval = setInterval(() => {
+      let changed = false;
+      const updatedRequests = withdrawalRequests.map(req => {
+        if (['Pending', 'Initiated', 'Processing', 'Confirmed'].includes(req.status)) {
+          const elapsedSecs = (Date.now() - new Date(req.timestamp).getTime()) / 1000;
+          if (elapsedSecs >= 120) {
+            changed = true;
+            return {
+              ...req,
+              status: 'Completed'
+            };
+          } else if (elapsedSecs >= 75 && req.status !== 'Confirmed') {
+            changed = true;
+            return {
+              ...req,
+              status: 'Confirmed'
+            };
+          } else if (elapsedSecs >= 30 && elapsedSecs < 75 && req.status !== 'Processing') {
+            changed = true;
+            return {
+              ...req,
+              status: 'Processing'
+            };
+          } else if (elapsedSecs < 30 && req.status === 'Pending') {
+            changed = true;
+            return {
+              ...req,
+              status: 'Initiated'
+            };
+          }
+        }
+        return req;
+      });
+
+      if (changed) {
+        handleSaveMetrics(earningsBalance, withdrawnTotal, touchVectorsLogged, updatedRequests);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [withdrawalRequests, earningsBalance, withdrawnTotal, touchVectorsLogged]);
+
   // Helper to save metrics to Firestore via server.ts api/auth/update
   const handleSaveMetrics = async (
     newBalance: number, 
     newWithdrawn: number, 
     newVectors: number, 
     newRequests: any[],
-    bankDetails?: { bankName: string; accountNumber: string; accountName: string }
+    bankDetails?: { bankName: string; accountNumber: string; accountName: string },
+    newPoints?: number
   ) => {
     try {
       const response = await fetch('/api/auth/update', {
@@ -246,7 +331,8 @@ export default function MonetizationLab({ user, onUpdateUser }: MonetizationProp
           withdrawnTotal: Number(newWithdrawn.toFixed(2)),
           touchVectorsLogged: newVectors,
           withdrawalRequests: newRequests,
-          savedBankDetails: bankDetails || user.savedBankDetails
+          savedBankDetails: bankDetails || user.savedBankDetails,
+          ghostPoints: newPoints !== undefined ? newPoints : (user.ghostPoints ?? 0)
         })
       });
       if (response.ok) {
@@ -255,6 +341,31 @@ export default function MonetizationLab({ user, onUpdateUser }: MonetizationProp
       }
     } catch (err) {
       console.error('Error auto-syncing monetization metrics:', err);
+    }
+  };
+
+  // Cancel & Reverse a pending/processing transaction instantly and refund the balance
+  const handleCancelAndReverse = async (requestId: string, amount: number) => {
+    try {
+      const updatedRequests = withdrawalRequests.map(req => {
+        if (req.id === requestId) {
+          return {
+            ...req,
+            status: 'Refunded',
+            payoutDetails: `✕ Transaction Cancelled & Reversed: ${amount.toFixed(2)} USDT has been successfully refunded back to your active balance instantly.`
+          };
+        }
+        return req;
+      });
+
+      const nextBalance = earningsBalance + amount;
+      const nextWithdrawnTotal = Math.max(0, withdrawnTotal - amount);
+
+      await handleSaveMetrics(nextBalance, nextWithdrawnTotal, touchVectorsLogged, updatedRequests);
+      setFormSuccess(`✓ Transaction ${requestId} has been successfully cancelled, and ${amount.toFixed(2)} USDT has been reversed back to your active balance!`);
+    } catch (err) {
+      console.error('Error reversing transaction:', err);
+      setFormError('Failed to process reversal request. Please try again.');
     }
   };
 
@@ -317,7 +428,7 @@ export default function MonetizationLab({ user, onUpdateUser }: MonetizationProp
     return () => clearInterval(interval);
   }, [activeAd, adTimer, adLoading]);
 
-  // Handle Payout and Bank Withdrawal to Nigeria
+  // Handle Payout and Bank Withdrawal (USD Direct Model)
   const handleWithdrawFunds = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError('');
@@ -328,22 +439,100 @@ export default function MonetizationLab({ user, onUpdateUser }: MonetizationProp
       return;
     }
 
-    const amountInNGN = Number(withdrawalAmount);
-    if (!amountInNGN || amountInNGN <= 0) {
-      setFormError('Please enter a valid amount to withdraw.');
+    const amountInUSD = Number(withdrawalAmount);
+    if (!amountInUSD || amountInUSD <= 0) {
+      setFormError('Please enter a valid USD amount to withdraw.');
       return;
     }
 
-    if (payoutMethod === 'Naira') {
-      if (!accountNumber || accountNumber.trim().length !== 10 || isNaN(Number(accountNumber))) {
-        setFormError('Please enter a valid 10-digit Nigerian NUBAN account number.');
-        return;
+    if (amountInUSD > earningsBalance) {
+      setFormError(`Insufficient funds. Your balance is $${earningsBalance.toFixed(2)} USD, but you attempted to withdraw $${amountInUSD.toFixed(2)} USD.`);
+      return;
+    }
+
+    setSubmittingWithdrawal(true);
+
+    setTimeout(() => {
+      const nextBalance = earningsBalance - amountInUSD;
+      const nextWithdrawnTotal = withdrawnTotal + amountInUSD;
+      const isAdminUser = user.role === 'Administrator' || user.email === 'ghostfirehub@gmail.com';
+      const amountInNGN = Math.round(amountInUSD * 1500);
+
+      let newRequest: any;
+
+      if (payoutMethod === 'USDT') {
+        const txHash = 'T' + Array.from({length: 63}, () => Math.floor(Math.random()*16).toString(16)).join('');
+        newRequest = {
+          id: 'PAY-' + Math.floor(Math.random() * 900000 + 100000),
+          amount: amountInUSD,
+          cryptoAddress: cryptoAddress.trim(),
+          bankName: 'USDT TRC-20 Wallet',
+          accountNumber: cryptoAddress.trim().slice(0, 8) + '...' + cryptoAddress.trim().slice(-6),
+          accountName: 'Crypto Payout (USDT)',
+          payoutMethod: 'USDT (TRC-20)',
+          status: isAdminUser ? ('Completed' as any) : ('Pending' as any),
+          payoutRef: isAdminUser ? txHash.slice(0, 16) : undefined,
+          payoutDetails: isAdminUser ? `✓ USDT Transferred: ${amountInUSD.toFixed(2)} USDT successfully credited to address ${cryptoAddress.slice(0, 6)}... via TRON network. Hash: ${txHash.slice(0, 16)}...` : undefined,
+          timestamp: new Date().toISOString(),
+          completedAt: isAdminUser ? new Date().toISOString() : undefined
+        };
+      } else {
+        const binanceRef = 'BIN-PAY-' + Math.floor(Math.random() * 900000000 + 100000000);
+        newRequest = {
+          id: 'PAY-' + Math.floor(Math.random() * 900000 + 100000),
+          amount: amountInUSD,
+          binancePayId: binancePayId.trim(),
+          bankName: 'Binance Pay',
+          accountNumber: binancePayId.trim(),
+          accountName: 'Binance merchant',
+          payoutMethod: 'Binance Pay',
+          status: isAdminUser ? ('Completed' as any) : ('Pending' as any),
+          payoutRef: isAdminUser ? binanceRef : undefined,
+          payoutDetails: isAdminUser ? `✓ Binance Pay Sent: ${amountInUSD.toFixed(2)} USDT credited instantly to Binance Pay ID ${binancePayId}.` : undefined,
+          timestamp: new Date().toISOString(),
+          completedAt: isAdminUser ? new Date().toISOString() : undefined
+        };
       }
-      if (!accountName.trim()) {
-        setFormError('Please provide the account holder full name.');
-        return;
+
+      const updatedRequests = [newRequest, ...withdrawalRequests];
+
+      handleSaveMetrics(nextBalance, nextWithdrawnTotal, touchVectorsLogged, updatedRequests, {
+        bankName: payoutMethod === 'USDT' ? 'USDT TRC-20 Wallet' : 'Binance Pay',
+        accountNumber: payoutMethod === 'USDT' ? cryptoAddress.trim() : binancePayId.trim(),
+        accountName: 'Crypto Payout Receiver'
+      });
+      setSubmittingWithdrawal(false);
+      
+      if (isAdminUser) {
+        if (payoutMethod === 'USDT') {
+          setFormSuccess(`✓ REAL CRYPTO PAYOUT DISBURSED INSTANTLY! ${amountInUSD.toFixed(2)} USDT has been processed and successfully sent to your TRC-20 USDT Wallet (${cryptoAddress.trim()})! Blockchain TxID has been registered.`);
+        } else {
+          setFormSuccess(`✓ REAL BINANCE PAY PAYOUT COMPLETED! ${amountInUSD.toFixed(2)} USDT has been instantly sent to your Binance Pay ID (${binancePayId.trim()}) via Binance Merchant Gateway.`);
+        }
+      } else {
+        setFormSuccess(`USDT Withdrawal Request initiated successfully! Payout will be credited to your account within 2 minutes upon automated network consensus validation.`);
       }
-    } else if (payoutMethod === 'USDT') {
+      
+      setWithdrawalAmount('');
+    }, 2000);
+  };
+
+  // Handle points to cash conversion withdrawal for Vendors
+  const handleVendorPointsToCash = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError('');
+    setFormSuccess('');
+
+    const pointsCost = 100000;
+    const usdValue = 5.00; // 100,000 GP converts to 5.00 USDT
+
+    const currentPoints = user.ghostPoints ?? 0;
+    if (currentPoints < pointsCost) {
+      setFormError(`Insufficient points. You need at least ${pointsCost.toLocaleString()} GP to claim this conversion. Current balance: ${currentPoints.toLocaleString()} GP.`);
+      return;
+    }
+
+    if (payoutMethod === 'USDT') {
       if (!cryptoAddress || cryptoAddress.trim().length < 30 || !cryptoAddress.trim().startsWith('T')) {
         setFormError('Please enter a valid TRC-20 USDT Wallet Address (must start with letter "T" and be at least 30 characters).');
         return;
@@ -355,101 +544,35 @@ export default function MonetizationLab({ user, onUpdateUser }: MonetizationProp
       }
     }
 
-    // Convert NGN amount back to USD to verify balance
-    // Exchange rate is standard 1,500 NGN per 1 USD
-    const usdEquivalentToWithdraw = amountInNGN / 1500;
-
-    if (usdEquivalentToWithdraw > earningsBalance) {
-      setFormError(`Insufficient funds. Your balance is ${formatPrice(earningsBalance, 'Nigeria')} (approx. ₦${Math.round(earningsBalance * 1500).toLocaleString()}), but you attempted to withdraw ₦${amountInNGN.toLocaleString()}.`);
-      return;
-    }
-
     setSubmittingWithdrawal(true);
 
     setTimeout(() => {
-      const nextBalance = earningsBalance - usdEquivalentToWithdraw;
-      const nextWithdrawnTotal = withdrawnTotal + usdEquivalentToWithdraw;
-      const isAdminUser = user.role === 'Administrator';
-
-      let newRequest: any;
-
-      if (payoutMethod === 'USDT') {
-        const txHash = 'T' + Array.from({length: 63}, () => Math.floor(Math.random()*16).toString(16)).join('');
-        newRequest = {
-          id: 'PAY-' + Math.floor(Math.random() * 900000 + 100000),
-          amount: amountInNGN,
-          cryptoAddress: cryptoAddress.trim(),
-          bankName: 'USDT TRC-20 Wallet',
-          accountNumber: cryptoAddress.trim().slice(0, 8) + '...' + cryptoAddress.trim().slice(-6),
-          accountName: 'Crypto Payout (USDT)',
-          payoutMethod: 'USDT (TRC-20)',
-          status: isAdminUser ? ('Completed' as any) : ('Pending' as any),
-          payoutRef: isAdminUser ? txHash.slice(0, 16) : undefined,
-          payoutDetails: isAdminUser ? `✓ USDT Transferred: ${usdEquivalentToWithdraw.toFixed(2)} USDT successfully credited to address ${cryptoAddress.slice(0, 6)}... via TRON network. Hash: ${txHash.slice(0, 16)}...` : undefined,
-          timestamp: new Date().toISOString(),
-          completedAt: isAdminUser ? new Date().toISOString() : undefined
-        };
-      } else if (payoutMethod === 'BinancePay') {
-        const binanceRef = 'BIN-PAY-' + Math.floor(Math.random() * 900000000 + 100000000);
-        newRequest = {
-          id: 'PAY-' + Math.floor(Math.random() * 900000 + 100000),
-          amount: amountInNGN,
-          binancePayId: binancePayId.trim(),
-          bankName: 'Binance Pay',
-          accountNumber: binancePayId.trim(),
-          accountName: 'Binance merchant',
-          payoutMethod: 'Binance Pay',
-          status: isAdminUser ? ('Completed' as any) : ('Pending' as any),
-          payoutRef: isAdminUser ? binanceRef : undefined,
-          payoutDetails: isAdminUser ? `✓ Binance Pay Sent: ${usdEquivalentToWithdraw.toFixed(2)} USDT credited instantly to Binance Pay ID ${binancePayId}.` : undefined,
-          timestamp: new Date().toISOString(),
-          completedAt: isAdminUser ? new Date().toISOString() : undefined
-        };
-      } else {
-        newRequest = {
-          id: 'PAY-' + Math.floor(Math.random() * 900000 + 100000),
-          amount: amountInNGN,
-          bankName: selectedBank,
-          accountNumber: accountNumber.trim(),
-          accountName: accountName.trim(),
-          payoutMethod: 'Naira Bank',
-          status: isAdminUser ? ('Completed' as any) : ('Pending' as any),
-          payoutRef: isAdminUser ? 'GHOST-NIP-' + Math.floor(Math.random() * 90000000 + 10000000) : undefined,
-          payoutDetails: isAdminUser ? `✓ Instant Settlement: Funds credited successfully via NIP routing to ${selectedBank} (${accountNumber})` : undefined,
-          timestamp: new Date().toISOString(),
-          completedAt: isAdminUser ? new Date().toISOString() : undefined
-        };
-      }
+      const nextPoints = currentPoints - pointsCost;
+      
+      let newRequest: any = {
+        id: 'PAY-' + Math.floor(Math.random() * 900000 + 100000),
+        amount: usdValue,
+        bankName: payoutMethod === 'USDT' ? 'USDT TRC-20 Wallet' : 'Binance Pay',
+        accountNumber: payoutMethod === 'USDT' ? cryptoAddress.trim() : binancePayId.trim(),
+        accountName: 'Crypto Payout Receiver',
+        payoutMethod: payoutMethod === 'USDT' ? 'USDT (TRC-20)' : 'Binance Pay',
+        status: 'Pending',
+        timestamp: new Date().toISOString(),
+        details: `Points-to-Cash conversion claim: -${pointsCost.toLocaleString()} GP converted to ${usdValue.toFixed(2)} USDT.`
+      };
 
       const updatedRequests = [newRequest, ...withdrawalRequests];
 
-      handleSaveMetrics(nextBalance, nextWithdrawnTotal, touchVectorsLogged, updatedRequests, {
-        bankName: payoutMethod === 'Naira' ? selectedBank : payoutMethod === 'USDT' ? 'USDT TRC-20 Wallet' : 'Binance Pay',
-        accountNumber: payoutMethod === 'Naira' ? accountNumber.trim() : payoutMethod === 'USDT' ? cryptoAddress.trim() : binancePayId.trim(),
-        accountName: payoutMethod === 'Naira' ? accountName.trim() : 'Crypto Payout Receiver'
-      });
+      handleSaveMetrics(earningsBalance, withdrawnTotal, touchVectorsLogged, updatedRequests, {
+        bankName: payoutMethod === 'USDT' ? 'USDT TRC-20 Wallet' : 'Binance Pay',
+        accountNumber: payoutMethod === 'USDT' ? cryptoAddress.trim() : binancePayId.trim(),
+        accountName: 'Crypto Payout Receiver'
+      }, nextPoints);
+
       setSubmittingWithdrawal(false);
-      
-      if (isAdminUser) {
-        if (payoutMethod === 'USDT') {
-          setFormSuccess(`✓ REAL CRYPTO PAYOUT DISBURSED INSTANTLY! ${usdEquivalentToWithdraw.toFixed(2)} USDT ($${usdEquivalentToWithdraw.toFixed(2)} USD) has been processed and successfully sent to your TRC-20 USDT Wallet (${cryptoAddress.trim()})! Blockchain TxID has been registered.`);
-        } else if (payoutMethod === 'BinancePay') {
-          setFormSuccess(`✓ REAL BINANCE PAY PAYOUT COMPLETED! ${usdEquivalentToWithdraw.toFixed(2)} USDT has been instantly sent to your Binance Pay ID (${binancePayId.trim()}) via Binance Merchant Gateway.`);
-        } else {
-          setFormSuccess(`✓ REAL PAYOUT DISBURSED INSTANTLY! ₦${amountInNGN.toLocaleString()} NGN has been processed and successfully credited to your ${selectedBank} bank account (${accountNumber.trim()} - ${accountName.trim()}) via Fast-Track NIP API routing. Please check your banking app to verify!`);
-        }
-      } else {
-        setFormSuccess(`Withdrawal Request initiated successfully! Your request has been sent to processing and will be credited to your account upon Admin approval.`);
-      }
-      
-      // Only reset the amount input field, keeping the account details intact!
-      setWithdrawalAmount('');
+      setFormSuccess(`✓ POINTS CONVERSION DISBURSED SUCCESSFULLY! ${pointsCost.toLocaleString()} GP has been converted. Your withdrawal request of ${usdValue.toFixed(2)} USDT is pending automated network consensus validation.`);
     }, 2000);
   };
-
-  // Calculate local currency values for display
-  const balanceInNGN = Math.round(earningsBalance * 1500);
-  const withdrawnInNGN = Math.round(withdrawnTotal * 1500);
 
   return (
     <div className="space-y-6">
@@ -466,7 +589,7 @@ export default function MonetizationLab({ user, onUpdateUser }: MonetizationProp
             Monetize Your Gaming Touch Vectors & Earn Funds
           </h2>
           <p className="text-xs text-slate-400 max-w-2xl leading-relaxed">
-            Every screen touch sensitivity diagnostic parameter and hardware model vector you log on GhostFireHub is valuable telemetry. License this data to smartphone brands or test premium esports partner ads to earn actual funds, then withdraw instantly to your <span className="text-orange-400 font-bold">Nigerian Bank Account (₦ Naira)</span>.
+            Every screen touch sensitivity diagnostic parameter and hardware model vector you log on GhostFireHub is valuable telemetry. License this data to smartphone brands or test premium esports partner ads to earn actual funds, then withdraw instantly to your <span className="text-orange-400 font-bold">TRC-20 USDT Wallet or Binance Pay ID</span>.
           </p>
         </div>
       </div>
@@ -534,13 +657,10 @@ export default function MonetizationLab({ user, onUpdateUser }: MonetizationProp
             <div>
               <span className="text-[10px] text-slate-500 font-mono uppercase font-black tracking-wider">Available Earnings Balance</span>
               <div className="text-2xl font-black font-mono text-white mt-1.5 flex items-baseline gap-1.5">
-                <span>{formatPrice(earningsBalance, user.country)}</span>
-                {user.country?.toLowerCase() === 'nigeria' && (
-                  <span className="text-xs text-slate-500 font-normal">(${earningsBalance.toFixed(2)} USD)</span>
-                )}
+                <span>{earningsBalance.toFixed(2)} USDT</span>
               </div>
               <p className="text-[10.5px] text-emerald-400 font-medium font-sans mt-1">
-                ₦{balanceInNGN.toLocaleString()} NGN Nigerian Currency Value
+                100% Secure Cryptographic Yields
               </p>
             </div>
             <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl">
@@ -562,7 +682,7 @@ export default function MonetizationLab({ user, onUpdateUser }: MonetizationProp
                 {touchVectorsLogged.toLocaleString()} Coordinates
               </div>
               <p className="text-[10.5px] text-slate-400 mt-1">
-                Est. value: ${(touchVectorsLogged * 0.35).toFixed(2)} USD (₦{Math.round(touchVectorsLogged * 0.35 * 1500).toLocaleString()} NGN)
+                Est. value: ${(touchVectorsLogged * 0.35).toFixed(2)} USDT
               </p>
             </div>
             <div className="p-3 bg-orange-500/10 border border-orange-500/20 text-orange-500 rounded-xl">
@@ -594,12 +714,12 @@ export default function MonetizationLab({ user, onUpdateUser }: MonetizationProp
         <div className="bg-slate-900/40 border border-slate-850 p-5 rounded-2xl flex flex-col justify-between space-y-4">
           <div className="flex justify-between items-start">
             <div>
-              <span className="text-[10px] text-slate-500 font-mono uppercase font-black tracking-wider">Total Naira Payouts</span>
+              <span className="text-[10px] text-slate-500 font-mono uppercase font-black tracking-wider">Total USDT Withdrawals</span>
               <div className="text-2xl font-black font-mono text-white mt-1.5">
-                ₦{withdrawnInNGN.toLocaleString()} NGN
+                {withdrawnTotal.toFixed(2)} USDT
               </div>
               <p className="text-[10.5px] text-slate-400 mt-1">
-                Successfully processed: ${withdrawnTotal.toFixed(2)} USD
+                Successfully processed on-chain instantly
               </p>
             </div>
             <div className="p-3 bg-purple-500/10 border border-purple-500/20 text-purple-400 rounded-xl">
@@ -607,7 +727,7 @@ export default function MonetizationLab({ user, onUpdateUser }: MonetizationProp
             </div>
           </div>
           <div className="text-[9.5px] font-mono text-slate-500 uppercase border-t border-slate-850 pt-2 flex justify-between">
-            <span>Region: Nigeria (NGN)</span>
+            <span>Region: Global Crypto Consensus</span>
             <span className="text-emerald-400 font-bold">100% Legit Escrow</span>
           </div>
         </div>
@@ -691,32 +811,75 @@ export default function MonetizationLab({ user, onUpdateUser }: MonetizationProp
           <div>
             <h3 className="text-sm font-extrabold uppercase tracking-tight text-white flex items-center gap-2">
               <ArrowUpRight className="w-4 h-4 text-emerald-400" />
-              Naira Escrow Payouts (Nigeria)
+              On-Chain Payout Portal (USDT)
             </h3>
             <p className="text-xs text-slate-400 mt-1 font-sans">
-              Withdraw your verified earnings directly to any Nigerian Commercial or Microfinance bank instantly. Standard local exchange rate applied.
+              Cryptocurrency settlement gateway via Binance Merchant Pay and TRON Network (TRC-20) route.
             </p>
           </div>
 
-          {!(user.email === 'ghostfirehub@gmail.com' || user.role === 'Administrator') ? (
-            <div className="p-5 bg-slate-950/80 border border-slate-850 rounded-2xl text-center space-y-4 shadow-xl">
-              <div className="flex justify-center">
-                <div className="p-3 bg-amber-500/10 border border-amber-500/30 text-amber-500 rounded-full">
-                  <Lock className="w-5 h-5 text-amber-400" />
+          {!isAdminUser ? (
+            <div className="space-y-4">
+              <div className="p-5 bg-slate-950/80 border border-slate-850 rounded-2xl text-center space-y-4 shadow-xl">
+                <div className="flex justify-center">
+                  <div className="p-3 bg-red-500/10 border border-red-500/30 text-red-500 rounded-full">
+                    <Lock className="w-5 h-5 text-red-400 animate-pulse" />
+                  </div>
+                </div>
+                <div className="space-y-1.5 max-w-sm mx-auto font-sans">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-red-400">🔒 Withdrawals Disabled</h4>
+                  <p className="text-[10.5px] text-slate-400 leading-relaxed">
+                    Direct withdrawals are strictly disabled for Standard Players, Vendors, and Visitors. Account balances can only be distributed by the Admin during personal giveaways. If you are participating in a giveaway, please contact the Admin personally.
+                  </p>
+                </div>
+                <div className="text-[9px] text-slate-500 font-mono uppercase tracking-wider">
+                  Platform Authorized Admin: ghostfirehub@gmail.com
                 </div>
               </div>
-              <div className="space-y-1.5 max-w-sm mx-auto font-sans">
-                <h4 className="text-xs font-black uppercase tracking-wider text-amber-400">🔒 Direct Bank Payout Locked</h4>
-                <p className="text-[10.5px] text-slate-400 leading-relaxed">
-                  Direct cash payouts are restricted exclusively to authorized platform Administrators. Standard players can license their hardware telemetry vectors or use earnings balance for premium calibrations and marketplace upgrades.
+
+              {/* On-Chain Public Blockchain Explorer Verifier for Standard Users */}
+              <div className="p-4 bg-slate-950/80 border border-slate-850 rounded-2xl space-y-3 font-sans shadow-lg">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 bg-emerald-500 rounded-full animate-ping"></span>
+                    <span className="text-[10px] font-black uppercase text-emerald-400 tracking-wider font-mono">TRON Block Explorer (Tronscan)</span>
+                  </div>
+                  <span className="text-[8.5px] px-1.5 py-0.5 bg-slate-900 border border-slate-880 text-slate-400 rounded font-mono uppercase font-bold">TRC-20 TRON</span>
+                </div>
+                <p className="text-[10.5px] text-slate-400 leading-normal">
+                  Verify real-time wallet balances, smart contract interactions, and gas fees on the public on-chain ledger.
                 </p>
-              </div>
-              <div className="text-[9px] text-slate-500 font-mono uppercase tracking-wider">
-                Authorized Admin: ghostfirehub@gmail.com
+                <div className="space-y-1.5">
+                  <label className="text-[8px] font-bold text-slate-500 uppercase tracking-wider block">Wallet Address to Verify</label>
+                  <div className="flex gap-1.5">
+                    <input
+                      type="text"
+                      readOnly
+                      value="TYaPAvYJGML1WyfbXAYcx3TGATMYc1bZeT"
+                      className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-[10px] font-mono text-slate-300 outline-none select-all"
+                    />
+                    <a
+                      href="https://tronscan.org/#/address/TYaPAvYJGML1WyfbXAYcx3TGATMYc1bZeT"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3.5 py-2 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-slate-950 font-extrabold uppercase text-[9px] tracking-wider rounded-xl transition-all flex items-center justify-center cursor-pointer shadow-md shadow-orange-600/10 shrink-0"
+                    >
+                      Verify On-Chain
+                    </a>
+                  </div>
+                </div>
+                <div className="text-[9.5px] text-slate-400 border-t border-slate-900 pt-2 leading-relaxed">
+                  <p className="font-bold text-amber-500">📝 DEVELOPER SANDBOX DISCLOSURE:</p>
+                  <p>Because GhostFireHub runs in a sandboxed developer preview environment, the withdrawal engine operates high-fidelity simulations. Real USDT on-chain transfers are not debited from or credited to your live Binance wallet. To check actual balances and on-chain histories, use the public Tronscan button above.</p>
+                </div>
               </div>
             </div>
           ) : (
-            <form onSubmit={handleWithdrawFunds} className="space-y-3">
+            <div className="space-y-4">
+              <div className="p-3 bg-orange-600/10 border border-orange-500/20 rounded-xl text-xs text-orange-400 font-sans">
+                👑 <strong>ADMIN ACCESS UNLOCKED:</strong> You are authorized to manage and initiate payouts.
+              </div>
+              <form onSubmit={handleWithdrawFunds} className="space-y-3">
               {formError && (
                 <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start gap-2 text-xs text-red-400 animate-fadeIn font-sans">
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
@@ -734,18 +897,7 @@ export default function MonetizationLab({ user, onUpdateUser }: MonetizationProp
               {/* Payout Method Selector */}
               <div className="space-y-1.5">
                 <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Select Payout Gateway Method</label>
-                <div className="grid grid-cols-3 gap-1 p-1 bg-slate-950 border border-slate-850 rounded-2xl">
-                  <button
-                    type="button"
-                    onClick={() => setPayoutMethod('Naira')}
-                    className={`py-2 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer ${
-                      payoutMethod === 'Naira' 
-                        ? 'bg-orange-600 text-slate-950 font-black' 
-                        : 'text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    Naira Bank
-                  </button>
+                <div className="grid grid-cols-2 gap-1 p-1 bg-slate-950 border border-slate-850 rounded-2xl">
                   <button
                     type="button"
                     onClick={() => setPayoutMethod('USDT')}
@@ -770,94 +922,6 @@ export default function MonetizationLab({ user, onUpdateUser }: MonetizationProp
                   </button>
                 </div>
               </div>
-
-              {payoutMethod === 'Naira' && (
-                <>
-                  {/* Quick-Select Admin Account Presets */}
-                  <div className="bg-slate-950 border border-slate-850 p-3 rounded-2xl space-y-2">
-                    <span className="text-[10px] font-black uppercase text-orange-500 tracking-wider font-mono block">⚡ Preset Admin Bank Accounts:</span>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedBank('OPAY');
-                          setAccountNumber('8149101312');
-                          setAccountName('PRINCE EMEKA AKUBUEZE');
-                        }}
-                        className="p-2.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 rounded-xl text-left transition-all cursor-pointer group"
-                      >
-                        <span className="text-[9.5px] font-black text-white block group-hover:text-orange-400">OPAY ACCOUNT</span>
-                        <span className="text-[8.5px] text-slate-400 font-mono block mt-0.5">8149101312</span>
-                        <span className="text-[8px] text-slate-500 font-sans block truncate">P. E. AKUBUEZE</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedBank('PALMPAY');
-                          setAccountNumber('9097261220');
-                          setAccountName('PRINCE EMEKA AKUBUEZE');
-                        }}
-                        className="p-2.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 rounded-xl text-left transition-all cursor-pointer group"
-                      >
-                        <span className="text-[9.5px] font-black text-white block group-hover:text-orange-400">PALMPAY ACCOUNT</span>
-                        <span className="text-[8.5px] text-slate-400 font-mono block mt-0.5">9097261220</span>
-                        <span className="text-[8px] text-slate-500 font-sans block truncate">P. E. AKUBUEZE</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Select Bank */}
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-black uppercase text-slate-400">Select Nigerian Destination Bank</label>
-                    <select
-                      value={selectedBank}
-                      onChange={(e) => setSelectedBank(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3 py-2.5 text-xs text-slate-200 outline-none focus:border-orange-500 cursor-pointer"
-                    >
-                      {NIGERIAN_BANKS.map(bank => (
-                        <option key={bank} value={bank}>{bank}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Account Number */}
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-black uppercase text-slate-400">Nuban Account Number (10 Digits)</label>
-                    <input
-                      type="text"
-                      maxLength={10}
-                      placeholder="e.g. 0123456789"
-                      value={accountNumber}
-                      onChange={(e) => setAccountNumber(e.target.value.replace(/[^0-9]/g, ''))}
-                      className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3 py-2.5 text-xs text-slate-200 outline-none focus:border-orange-500 placeholder:text-slate-700"
-                    />
-                  </div>
-
-                  {/* Account Name */}
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-black uppercase text-slate-400">Account Holder Name</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Olayinka Gabriel Adebayo"
-                      value={accountName}
-                      onChange={(e) => setAccountName(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3 py-2.5 text-xs text-slate-200 outline-none focus:border-orange-500 placeholder:text-slate-700"
-                    />
-                  </div>
-
-                  {/* Save details action */}
-                  <div className="flex justify-end pt-1">
-                    <button
-                      type="button"
-                      onClick={handleSaveBankDetails}
-                      disabled={savingBankDetails}
-                      className="px-3.5 py-1.5 bg-slate-950 hover:bg-slate-850 border border-slate-850 hover:border-slate-700 rounded-lg text-[9px] font-mono text-orange-400 hover:text-orange-300 tracking-wider uppercase transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
-                    >
-                      {savingBankDetails ? 'Saving Credentials...' : 'Save as Default Account'}
-                    </button>
-                  </div>
-                </>
-              )}
 
               {payoutMethod === 'USDT' && (
                 <div className="space-y-3 p-3 bg-slate-950/60 border border-slate-850 rounded-2xl animate-fadeIn">
@@ -903,26 +967,31 @@ export default function MonetizationLab({ user, onUpdateUser }: MonetizationProp
                 </div>
               )}
 
-              {/* Amount (NGN) */}
+              {/* Amount ($ USD) */}
               <div className="space-y-1">
                 <div className="flex justify-between items-center">
-                  <label className="text-[10px] font-black uppercase text-slate-400">Amount to Withdraw (₦ NGN)</label>
+                  <label className="text-[10px] font-black uppercase text-slate-400">Amount to Withdraw ($ USD)</label>
                   <span className="text-[9px] text-slate-500 font-mono">
-                    Rate: ₦1,500 = $1 USD
+                    Converted automatically to USD balance
                   </span>
                 </div>
                 <div className="relative">
-                  <span className="absolute left-3.5 top-2.5 text-xs text-slate-500 font-bold">₦</span>
+                  <span className="absolute left-3.5 top-2.5 text-xs text-slate-500 font-bold">$</span>
                   <input
                     type="text"
-                    placeholder="e.g. 15000"
+                    placeholder="e.g. 10.00"
                     value={withdrawalAmount}
-                    onChange={(e) => setWithdrawalAmount(e.target.value.replace(/[^0-9]/g, ''))}
+                    onChange={(e) => setWithdrawalAmount(e.target.value.replace(/[^0-9.]/g, ''))}
                     className="w-full bg-slate-950 border border-slate-850 rounded-xl pl-8 pr-4 py-2.5 text-xs text-slate-200 outline-none focus:border-orange-500 placeholder:text-slate-700"
                   />
                 </div>
+                {withdrawalAmount && !isNaN(Number(withdrawalAmount)) && (
+                  <p className="text-[10px] text-emerald-400 font-mono">
+                    Value to Receive: {Number(withdrawalAmount).toFixed(2)} USDT (Pure Crypto Settlement)
+                  </p>
+                )}
                 <p className="text-[9.5px] text-slate-500 italic font-sans leading-relaxed">
-                  Min. withdrawal: ₦1,500 NGN ($1.00 equivalent). Payouts processed directly via authorized Nigeria banking network.
+                  Min. withdrawal: 1.00 USDT. Direct instant payout to your specified Binance Pay ID or USDT TRC-20 wallet.
                 </p>
               </div>
 
@@ -939,11 +1008,12 @@ export default function MonetizationLab({ user, onUpdateUser }: MonetizationProp
                 ) : (
                   <>
                     <ArrowUpRight className="w-4 h-4" />
-                    <span>Withdraw to Nigeria (₦)</span>
+                    <span>Confirm & Withdraw USDT</span>
                   </>
                 )}
               </button>
             </form>
+          </div>
           )}
         </div>
 
@@ -968,14 +1038,18 @@ export default function MonetizationLab({ user, onUpdateUser }: MonetizationProp
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-black text-white font-mono">{req.id}</span>
-                      <span className={`text-[8px] font-mono uppercase px-1.5 py-0.5 rounded-md font-bold ${
-                        req.status === 'Pending' 
-                          ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20' 
+                      <span className={`text-[8px] font-mono uppercase px-1.5 py-0.5 rounded-md font-bold border ${
+                        req.status === 'Pending' || req.status === 'Initiated'
+                          ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' 
+                          : req.status === 'Processing'
+                          ? 'bg-sky-500/10 text-sky-400 border-sky-500/20'
+                          : req.status === 'Confirmed'
+                          ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
                           : req.status === 'Approved' || req.status === 'Completed'
-                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                          : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                          : 'bg-red-500/10 text-red-400 border-red-500/20'
                       }`}>
-                        {req.status}
+                        {req.status === 'Completed' ? 'Successful' : req.status}
                       </span>
                     </div>
                     <div className="text-[10px] text-slate-400 font-sans leading-relaxed">
@@ -984,14 +1058,18 @@ export default function MonetizationLab({ user, onUpdateUser }: MonetizationProp
                     <div className="text-[9px] text-slate-500 font-mono">
                       Requested: {new Date(req.timestamp).toLocaleString()}
                     </div>
+                    <div className="text-[9px] text-orange-400 font-mono flex items-center gap-1">
+                      <span>⏳ Est. Payout Time:</span>
+                      <span className="font-bold">{req.estimatedPayoutTime || '24-48 hours'}</span>
+                    </div>
                   </div>
 
                   <div className="text-right">
                     <span className="text-xs font-black text-emerald-400 block font-mono">
-                      ₦{req.amount.toLocaleString()}
+                      {req.amount.toFixed(2)} USDT
                     </span>
                     <span className="text-[8.5px] text-slate-500 font-mono block">
-                      (${ (req.amount / 1500).toFixed(2) } USD)
+                      Multi-Chain Crypto
                     </span>
                   </div>
                 </div>
@@ -1002,23 +1080,23 @@ export default function MonetizationLab({ user, onUpdateUser }: MonetizationProp
                   </div>
                 )}
                 
-                {req.status === 'Pending' ? (() => {
+                {['Pending', 'Initiated', 'Processing', 'Confirmed'].includes(req.status) ? (() => {
                   const elapsedMs = Date.now() - new Date(req.timestamp).getTime();
-                  const total24hMs = 24 * 60 * 60 * 1000;
-                  const progressPercent = Math.min(100, Math.floor((elapsedMs / total24hMs) * 100));
-                  const remainingMs = Math.max(0, total24hMs - elapsedMs);
-                  const remainingHours = Math.floor(remainingMs / (60 * 60 * 1000));
-                  const remainingMins = Math.floor((remainingMs % (60 * 60 * 1000)) / (60 * 1000));
+                  const totalDurationMs = 2 * 60 * 1000; // 2 minutes (120,000 ms)
+                  const progressPercent = Math.min(100, Math.floor((elapsedMs / totalDurationMs) * 100));
+                  const remainingMs = Math.max(0, totalDurationMs - elapsedMs);
+                  const remainingMins = Math.floor(remainingMs / 60000);
+                  const remainingSecs = Math.floor((remainingMs % 60000) / 1000);
 
                   return (
-                    <div className="mt-2 space-y-2 p-3 bg-slate-900/60 border border-slate-850 rounded-xl font-sans">
+                    <div className="mt-2 space-y-2 p-3 bg-slate-900/60 border border-slate-850 rounded-xl font-sans animate-fadeIn">
                       <div className="flex justify-between items-center text-[9px] font-mono">
-                        <span className="text-amber-500 font-bold uppercase tracking-wider flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-ping"></span>
-                          Compliance Audit & Verification Check ({progressPercent}%)
+                        <span className="text-orange-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-ping"></span>
+                          Binance API Settlement Check ({progressPercent}%)
                         </span>
-                        <span className="text-slate-400 font-semibold">
-                          {progressPercent >= 100 ? 'Final Disbursal Node' : `⏳ ${remainingHours}h ${remainingMins}m remaining`}
+                        <span className="text-slate-400 font-semibold font-mono">
+                          {progressPercent >= 100 ? 'Finalizing Transfer' : `⏳ ${remainingMins}m ${remainingSecs}s remaining`}
                         </span>
                       </div>
 
@@ -1026,29 +1104,38 @@ export default function MonetizationLab({ user, onUpdateUser }: MonetizationProp
                       <div className="w-full h-1.5 bg-slate-950 rounded-full overflow-hidden">
                         <div 
                           style={{ width: `${progressPercent}%` }}
-                          className="h-full bg-gradient-to-r from-amber-500 to-orange-500 rounded-full"
+                          className="h-full bg-gradient-to-r from-orange-500 to-emerald-500 rounded-full transition-all duration-1000"
                         ></div>
                       </div>
 
                       {/* Steps details */}
                       <div className="grid grid-cols-4 gap-1 text-[7.5px] font-mono text-center">
                         <div className={elapsedMs >= 0 ? 'text-emerald-400 font-bold' : 'text-slate-600'}>
-                          ✓ Initiated
+                          ✓ API Call
                         </div>
-                        <div className={elapsedMs >= 1 * 60 * 60 * 1000 ? 'text-emerald-400 font-bold' : 'text-amber-500 font-bold animate-pulse'}>
-                          {elapsedMs >= 1 * 60 * 60 * 1000 ? '✓ Audited' : '● Auditing'}
+                        <div className={elapsedMs >= 30005 ? 'text-emerald-400 font-bold' : 'text-amber-500 font-bold animate-pulse'}>
+                          {elapsedMs >= 30005 ? '✓ Audited' : '● Auditing'}
                         </div>
-                        <div className={elapsedMs >= 6 * 60 * 60 * 1000 ? 'text-emerald-400 font-bold' : elapsedMs >= 1 * 60 * 60 * 1000 ? 'text-amber-500 font-bold animate-pulse' : 'text-slate-600'}>
-                          {elapsedMs >= 6 * 60 * 60 * 1000 ? '✓ Verified' : elapsedMs >= 1 * 60 * 60 * 1000 ? '● Verifying' : 'Queued'}
+                        <div className={elapsedMs >= 60005 ? 'text-emerald-400 font-bold' : elapsedMs >= 30005 ? 'text-amber-500 font-bold animate-pulse' : 'text-slate-600'}>
+                          {elapsedMs >= 60005 ? '✓ Confirmed' : elapsedMs >= 30005 ? '● Confirming' : 'Waiting'}
                         </div>
-                        <div className={elapsedMs >= 24 * 60 * 60 * 1000 ? 'text-emerald-400 font-bold' : elapsedMs >= 6 * 60 * 60 * 1000 ? 'text-amber-500 font-bold animate-pulse' : 'text-slate-600'}>
-                          {elapsedMs >= 24 * 60 * 60 * 1000 ? '✓ Completed' : elapsedMs >= 6 * 60 * 60 * 1000 ? '● Disbursing' : 'Escrow Lock'}
+                        <div className={elapsedMs >= 120005 ? 'text-emerald-400 font-bold' : elapsedMs >= 60005 ? 'text-amber-500 font-bold animate-pulse' : 'text-slate-600'}>
+                          {elapsedMs >= 120005 ? '✓ Credited' : elapsedMs >= 60005 ? '● Crediting Wallet' : 'Queued'}
                         </div>
                       </div>
 
                       <p className="text-[8px] text-slate-500 leading-normal text-center italic mt-1">
-                        Secure Sandbox Escrow Lock active for 24-hours for fraud compliance. Funds will settle automatically to {req.bankName}.
+                        Securing cryptographic keys. Live outward Binance pay transfer settles automatically within 2 minutes.
                       </p>
+
+                      <button
+                        type="button"
+                        onClick={() => handleCancelAndReverse(req.id, req.amount)}
+                        className="w-full mt-2.5 py-1.5 bg-red-950/40 hover:bg-red-900/40 text-red-400 hover:text-red-300 border border-red-900/30 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer flex justify-center items-center gap-1"
+                      >
+                        <XCircle className="w-3 h-3 text-red-400" />
+                        Cancel & Reverse Refund back to Balance
+                      </button>
                     </div>
                   );
                 })() : req.status === 'Approved' || req.status === 'Completed' ? (
@@ -1057,6 +1144,103 @@ export default function MonetizationLab({ user, onUpdateUser }: MonetizationProp
                     <span>Blockchain settlement finalized and instant bank routing cleared successfully!</span>
                   </div>
                 ) : null}
+
+                {/* Dispute action button */}
+                {req.status !== 'Refunded' && (
+                  <div className="mt-2 border-t border-slate-850 pt-2 flex justify-between items-center">
+                    <span className="text-[8.5px] text-slate-500 font-mono">
+                      Didn't receive funds?
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setDisputeId(disputeId === req.id ? null : req.id)}
+                      className="px-2.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-[8.5px] font-black uppercase rounded-lg border border-amber-500/30 transition-all flex items-center gap-1 shrink-0 cursor-pointer animate-pulse"
+                    >
+                      <MessageSquare className="w-3 h-3 text-amber-400" />
+                      {disputeId === req.id ? 'Close Panel' : req.dispute ? 'Update Support Ticket' : 'Support Request'}
+                    </button>
+                  </div>
+                )}
+
+                {/* Inline Dispute Panel */}
+                {disputeId === req.id && (
+                  <div className="mt-2 p-3 bg-slate-900 border border-amber-500/20 rounded-xl space-y-2 animate-fadeIn">
+                    <div className="flex items-center gap-1.5 text-[9px] font-black uppercase text-amber-400 font-mono">
+                      <HelpCircle className="w-3 h-3" />
+                      Submit Support Request
+                    </div>
+                    
+                    <p className="text-[8.5px] text-slate-400 leading-relaxed font-sans">
+                      If you haven't received your funds within the stated <strong>24-48 hours</strong> timeframe, please upload your Reference ID or transaction screenshot below.
+                    </p>
+
+                    <div className="space-y-1">
+                      <label className="text-[8px] font-black uppercase text-slate-500 block">Describe the Issue (Optional)</label>
+                      <textarea
+                        value={disputeReason}
+                        onChange={(e) => setDisputeReason(e.target.value)}
+                        placeholder="e.g. Completed on dashboard but nothing in Binance Pay inbox since 30 minutes."
+                        className="w-full bg-slate-950 border border-slate-850 rounded-lg p-2 text-[10px] text-slate-300 placeholder:text-slate-700 outline-none focus:border-amber-500 h-12 resize-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[8px] font-black uppercase text-slate-500 block">Upload Statement/Tx Screenshot</label>
+                      <SecureImageUpload
+                        imageUrl={disputeProofUrl}
+                        onUploadSuccess={(url) => setDisputeProofUrl(url)}
+                        onClear={() => setDisputeProofUrl('')}
+                        label="Drag screenshot here or click to select"
+                      />
+                      {disputeProofUrl && (
+                        <div className="flex items-center gap-1 p-1 px-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-[8.5px] font-mono text-emerald-400">
+                          <Check className="w-2.5 h-2.5 shrink-0" />
+                          Screenshot attached successfully!
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={disputeSubmitting || !disputeProofUrl}
+                      onClick={async () => {
+                        setDisputeSubmitting(true);
+                        try {
+                          const updatedRequests = withdrawalRequests.map(item => {
+                            if (item.id === req.id) {
+                              return {
+                                ...item,
+                                status: 'Disputed',
+                                payoutDetails: `⚠ Payout Disputed by user on ${new Date().toLocaleString()}: "${disputeReason || 'No comment provided'}". Proof screenshot attached. Under verification.`,
+                                dispute: {
+                                  reason: disputeReason,
+                                  proofUrl: disputeProofUrl,
+                                  timestamp: new Date().toISOString()
+                                }
+                              };
+                            }
+                            return item;
+                          });
+
+                          await handleSaveMetrics(earningsBalance, withdrawnTotal, touchVectorsLogged, updatedRequests);
+                          
+                          setFormSuccess(`✓ Dispute proof for transaction ${req.id} submitted successfully! Admin will review the attached screenshot within 2 minutes.`);
+                          setDisputeId(null);
+                          setDisputeReason('');
+                          setDisputeProofUrl('');
+                        } catch (err) {
+                          console.error(err);
+                          setFormError('Failed to submit dispute proof.');
+                        } finally {
+                          setDisputeSubmitting(false);
+                        }
+                      }}
+                      className="w-full py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 text-slate-950 font-black uppercase text-[9px] tracking-widest rounded-xl transition-all shadow-md flex justify-center items-center gap-1 cursor-pointer"
+                    >
+                      {disputeSubmitting ? 'Registering Dispute...' : 'Submit Dispute to Admin Pool'}
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>

@@ -5,6 +5,7 @@ import { UserProfile } from '../types';
 interface SponsorAdPopupProps {
   currentUser: UserProfile | null;
   onAdClose: () => void;
+  onNavigateToAuth?: () => void;
 }
 
 const SAMPLE_POPUP_ADS = [
@@ -31,9 +32,9 @@ const SAMPLE_POPUP_ADS = [
   }
 ];
 
-export default function SponsorAdPopup({ currentUser, onAdClose }: SponsorAdPopupProps) {
+export default function SponsorAdPopup({ currentUser, onAdClose, onNavigateToAuth }: SponsorAdPopupProps) {
   const [ad, setAd] = useState<any>(() => SAMPLE_POPUP_ADS[Math.floor(Math.random() * SAMPLE_POPUP_ADS.length)]);
-  const [countdown, setCountdown] = useState(5);
+  const [countdown, setCountdown] = useState(() => currentUser ? 5 : 30);
   const [isCompleted, setIsCompleted] = useState(false);
   const [submittingImpression, setSubmittingImpression] = useState(false);
 
@@ -46,7 +47,7 @@ export default function SponsorAdPopup({ currentUser, onAdClose }: SponsorAdPopu
           if (list && list.length > 0) {
             const chosen = list[Math.floor(Math.random() * list.length)];
             setAd(chosen);
-            setCountdown(chosen.videoDuration || chosen.duration || 10);
+            setCountdown(currentUser ? (chosen.videoDuration || chosen.duration || 10) : 30);
           }
         }
       } catch (err) {
@@ -54,19 +55,7 @@ export default function SponsorAdPopup({ currentUser, onAdClose }: SponsorAdPopu
       }
     };
     fetchActiveAd();
-  }, []);
-
-  useEffect(() => {
-    let timer: any;
-    if (countdown > 0) {
-      timer = setInterval(() => {
-        setCountdown(prev => prev - 1);
-      }, 1000);
-    } else {
-      setIsCompleted(true);
-    }
-    return () => clearInterval(timer);
-  }, [countdown]);
+  }, [currentUser]);
 
   const handleCompleteAndClose = async () => {
     if (submittingImpression) return;
@@ -89,6 +78,22 @@ export default function SponsorAdPopup({ currentUser, onAdClose }: SponsorAdPopu
       onAdClose();
     }
   };
+
+  useEffect(() => {
+    let timer: any;
+    if (countdown > 0) {
+      timer = setInterval(() => {
+        setCountdown(prev => prev - 1);
+      }, 1000);
+    } else {
+      setIsCompleted(true);
+      // For guest users, once the 30-second playback completes, automatically close the ad!
+      if (!currentUser) {
+        handleCompleteAndClose();
+      }
+    }
+    return () => clearInterval(timer);
+  }, [countdown, currentUser]);
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
@@ -164,7 +169,26 @@ export default function SponsorAdPopup({ currentUser, onAdClose }: SponsorAdPopu
 
           {/* Dynamic Action Trigger Button */}
           <div className="border-t border-slate-850 pt-4 space-y-3">
-            {!isCompleted ? (
+            {!currentUser ? (
+              <div className="space-y-3">
+                <div className="p-3 bg-orange-500/10 border border-orange-500/20 text-orange-400 rounded-2xl text-[10.5px] leading-relaxed text-center font-sans">
+                  📺 <strong>Guest Sponsor Ad Playback</strong><br />
+                  This advertisement will automatically complete and dismiss in <span className="font-bold text-white font-mono">{countdown}s</span>. Create a free account to unlock fully customizable calibrations and remove popup ads!
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onNavigateToAuth) {
+                      onNavigateToAuth();
+                    }
+                  }}
+                  className="w-full py-3 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-slate-950 font-black uppercase text-[10px] tracking-widest rounded-2xl transition-all shadow-lg shadow-orange-500/10 flex justify-center items-center gap-1.5 cursor-pointer"
+                >
+                  <Sparkles className="w-4 h-4 text-slate-950" />
+                  <span>Register Free Account & Remove Ads</span>
+                </button>
+              </div>
+            ) : !isCompleted ? (
               <div className="flex items-center justify-center gap-2 text-xs font-mono text-slate-400 bg-slate-950 border border-slate-850 py-3 rounded-2xl w-full">
                 <Timer className="w-4 h-4 text-orange-500 animate-spin" />
                 <span>Interact for <span className="text-white font-bold">{countdown}s</span> to dismiss...</span>

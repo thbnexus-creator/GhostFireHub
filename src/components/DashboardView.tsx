@@ -1195,78 +1195,80 @@ export default function DashboardView({
               </div>
 
               {/* Nigerian Bank Details Saving Form */}
-              <div className="mt-6 pt-5 border-t border-slate-850/80 space-y-4">
-                <div className="space-y-1">
-                  <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                    <Coins className="w-4 h-4 text-orange-500 animate-pulse" />
-                    Saved Nigerian Bank Payout Details (₦)
-                  </h4>
-                  <p className="text-[10px] text-slate-500">
-                    Securely save and lock your default Nigerian bank account parameters. Your details will be auto-populated during withdrawals to facilitate immediate 12-24h Naira payouts without manual re-typing.
-                  </p>
-                </div>
+              {isAdmin && (
+                <div className="mt-6 pt-5 border-t border-slate-850/80 space-y-4">
+                  <div className="space-y-1">
+                    <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                      <Coins className="w-4 h-4 text-orange-500 animate-pulse" />
+                      Saved Nigerian Bank Payout Details (₦)
+                    </h4>
+                    <p className="text-[10px] text-slate-500">
+                      Securely save and lock your default Nigerian bank account parameters. Your details will be auto-populated during withdrawals to facilitate immediate 12-24h Naira payouts without manual re-typing.
+                    </p>
+                  </div>
 
-                <form onSubmit={handleSaveBankDetails} className="bg-slate-950/40 border border-slate-900/80 p-4 rounded-2xl space-y-4">
-                  {bankSaveSuccess && (
-                    <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] rounded-xl font-mono">
-                      ✓ {bankSaveSuccess}
-                    </div>
-                  )}
-                  {bankSaveError && (
-                    <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-[10px] rounded-xl font-mono">
-                      ⚠ {bankSaveError}
-                    </div>
-                  )}
+                  <form onSubmit={handleSaveBankDetails} className="bg-slate-950/40 border border-slate-900/80 p-4 rounded-2xl space-y-4">
+                    {bankSaveSuccess && (
+                      <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] rounded-xl font-mono">
+                        ✓ {bankSaveSuccess}
+                      </div>
+                    )}
+                    {bankSaveError && (
+                      <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-[10px] rounded-xl font-mono">
+                        ⚠ {bankSaveError}
+                      </div>
+                    )}
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
-                    <div className="space-y-1">
-                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider block font-mono">Select Active Bank</label>
-                      <select
-                        value={savedBankName}
-                        onChange={(e) => setSavedBankName(e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-300 outline-none focus:border-orange-500 font-mono"
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider block font-mono">Select Active Bank</label>
+                        <select
+                          value={savedBankName}
+                          onChange={(e) => setSavedBankName(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-300 outline-none focus:border-orange-500 font-mono"
+                        >
+                          {NIGERIAN_BANKS.map((b) => (
+                            <option key={b} value={b}>{b}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider block font-mono">NUBAN Account Number</label>
+                        <input
+                          type="text"
+                          maxLength={10}
+                          value={savedAccountNumber}
+                          onChange={(e) => setSavedAccountNumber(e.target.value.replace(/\D/g, ''))}
+                          placeholder="e.g. 0123456789"
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-300 outline-none focus:border-orange-500 font-mono"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider block font-mono">Account Holder Full Name</label>
+                        <input
+                          type="text"
+                          value={savedAccountName}
+                          onChange={(e) => setSavedAccountName(e.target.value)}
+                          placeholder="e.g. John Doe"
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-300 outline-none focus:border-orange-500 font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end pt-1">
+                      <button
+                        type="submit"
+                        className="px-4.5 py-2.5 bg-orange-500 hover:bg-orange-600 text-slate-950 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all shadow-md cursor-pointer flex items-center justify-center gap-1.5"
                       >
-                        {NIGERIAN_BANKS.map((b) => (
-                          <option key={b} value={b}>{b}</option>
-                        ))}
-                      </select>
+                        <Check className="w-3.5 h-3.5" />
+                        Save Secure Payout Details
+                      </button>
                     </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider block font-mono">NUBAN Account Number</label>
-                      <input
-                        type="text"
-                        maxLength={10}
-                        value={savedAccountNumber}
-                        onChange={(e) => setSavedAccountNumber(e.target.value.replace(/\D/g, ''))}
-                        placeholder="e.g. 0123456789"
-                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-300 outline-none focus:border-orange-500 font-mono"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider block font-mono">Account Holder Full Name</label>
-                      <input
-                        type="text"
-                        value={savedAccountName}
-                        onChange={(e) => setSavedAccountName(e.target.value)}
-                        placeholder="e.g. John Doe"
-                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-300 outline-none focus:border-orange-500 font-mono"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex justify-end pt-1">
-                    <button
-                      type="submit"
-                      className="px-4.5 py-2.5 bg-orange-500 hover:bg-orange-600 text-slate-950 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all shadow-md cursor-pointer flex items-center justify-center gap-1.5"
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                      Save Secure Payout Details
-                    </button>
-                  </div>
-                </form>
-              </div>
+                  </form>
+                </div>
+              )}
 
               {/* Vendor Activation Code Section */}
               {!user.isVendor && (
@@ -1434,125 +1436,127 @@ export default function DashboardView({
               </div>
 
               {/* GitHub OAuth Diagnostic and Verification Console */}
-              <div className="mt-6 pt-5 border-t border-slate-850/80 space-y-4">
-                <div className="space-y-1">
-                  <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                    <Github className="w-4 h-4 text-orange-500" />
-                    GitHub OAuth & Firebase Integration Setup
-                  </h4>
-                  <p className="text-[10px] text-slate-500">
-                    If GitHub Sign-In or authentication fails, verify your callback configurations using this tactical checklist.
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {/* Step 1: Firebase configuration */}
-                  <div className="p-4 bg-slate-950/60 border border-slate-900 rounded-2xl space-y-3">
-                    <div className="flex items-center gap-2">
-                      <span className="flex items-center justify-center w-5 h-5 bg-orange-500/15 border border-orange-500/30 text-orange-500 rounded-lg text-[10px] font-bold font-mono">01</span>
-                      <span className="text-[10px] font-black uppercase text-slate-200 tracking-wider">GitHub OAuth Registration</span>
-                    </div>
-                    <p className="text-[9.5px] text-slate-400 leading-relaxed">
-                      Register your application as an OAuth App in GitHub Developer Settings. Paste your client credentials into the Firebase Console.
+              {isAdmin && (
+                <div className="mt-6 pt-5 border-t border-slate-850/80 space-y-4">
+                  <div className="space-y-1">
+                    <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                      <Github className="w-4 h-4 text-orange-500" />
+                      GitHub OAuth & Firebase Integration Setup
+                    </h4>
+                    <p className="text-[10px] text-slate-500">
+                      If GitHub Sign-In or authentication fails, verify your callback configurations using this tactical checklist.
                     </p>
-                    <div className="space-y-2 pt-1 font-mono text-[9px]">
-                      <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-850/80 flex flex-col gap-1">
-                        <span className="text-slate-500 text-[8px] uppercase font-bold">1. GitHub Developer URL</span>
-                        <a href="https://github.com/settings/developers" target="_blank" rel="noopener noreferrer" className="text-orange-500 hover:underline truncate">
-                          github.com/settings/developers
-                        </a>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {/* Step 1: Firebase configuration */}
+                    <div className="p-4 bg-slate-950/60 border border-slate-900 rounded-2xl space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span className="flex items-center justify-center w-5 h-5 bg-orange-500/15 border border-orange-500/30 text-orange-500 rounded-lg text-[10px] font-bold font-mono">01</span>
+                        <span className="text-[10px] font-black uppercase text-slate-200 tracking-wider">GitHub OAuth Registration</span>
                       </div>
-                      <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-850/80 flex flex-col gap-1">
-                        <span className="text-slate-500 text-[8px] uppercase font-bold">2. Homepage URL</span>
-                        <div className="flex justify-between items-center gap-1.5">
-                          <span className="text-slate-300 truncate select-all">{window.location.origin}</span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              navigator.clipboard.writeText(window.location.origin);
-                              setSettingsSuccess('Homepage URL copied!');
-                            }}
-                            className="text-orange-500 hover:text-orange-400 uppercase font-bold shrink-0 text-[8px]"
-                          >
-                            Copy
-                          </button>
+                      <p className="text-[9.5px] text-slate-400 leading-relaxed">
+                        Register your application as an OAuth App in GitHub Developer Settings. Paste your client credentials into the Firebase Console.
+                      </p>
+                      <div className="space-y-2 pt-1 font-mono text-[9px]">
+                        <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-850/80 flex flex-col gap-1">
+                          <span className="text-slate-500 text-[8px] uppercase font-bold">1. GitHub Developer URL</span>
+                          <a href="https://github.com/settings/developers" target="_blank" rel="noopener noreferrer" className="text-orange-500 hover:underline truncate">
+                            github.com/settings/developers
+                          </a>
+                        </div>
+                        <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-850/80 flex flex-col gap-1">
+                          <span className="text-slate-500 text-[8px] uppercase font-bold">2. Homepage URL</span>
+                          <div className="flex justify-between items-center gap-1.5">
+                            <span className="text-slate-300 truncate select-all">{window.location.origin}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(window.location.origin);
+                                setSettingsSuccess('Homepage URL copied!');
+                              }}
+                              className="text-orange-500 hover:text-orange-400 uppercase font-bold shrink-0 text-[8px]"
+                            >
+                              Copy
+                            </button>
+                          </div>
+                        </div>
+                        <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-850/80 flex flex-col gap-1">
+                          <span className="text-slate-500 text-[8px] uppercase font-bold">3. Authorization Callback URL</span>
+                          <div className="flex justify-between items-center gap-1.5">
+                            <span className="text-slate-300 truncate select-all">
+                              https://gen-lang-client-0929377753.firebaseapp.com/__/auth/handler
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText('https://gen-lang-client-0929377753.firebaseapp.com/__/auth/handler');
+                                setSettingsSuccess('Callback URL copied!');
+                              }}
+                              className="text-orange-500 hover:text-orange-400 uppercase font-bold shrink-0 text-[8px]"
+                            >
+                              Copy
+                            </button>
+                          </div>
                         </div>
                       </div>
-                      <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-850/80 flex flex-col gap-1">
-                        <span className="text-slate-500 text-[8px] uppercase font-bold">3. Authorization Callback URL</span>
-                        <div className="flex justify-between items-center gap-1.5">
-                          <span className="text-slate-300 truncate select-all">
-                            https://gen-lang-client-0929377753.firebaseapp.com/__/auth/handler
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              navigator.clipboard.writeText('https://gen-lang-client-0929377753.firebaseapp.com/__/auth/handler');
-                              setSettingsSuccess('Callback URL copied!');
-                            }}
-                            className="text-orange-500 hover:text-orange-400 uppercase font-bold shrink-0 text-[8px]"
-                          >
-                            Copy
-                          </button>
-                        </div>
+                    </div>
+
+                    {/* Step 2: Firebase Console and authorized domains */}
+                    <div className="p-4 bg-slate-950/60 border border-slate-900 rounded-2xl space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span className="flex items-center justify-center w-5 h-5 bg-orange-500/15 border border-orange-500/30 text-orange-500 rounded-lg text-[10px] font-bold font-mono">02</span>
+                        <span className="text-[10px] font-black uppercase text-slate-200 tracking-wider">Authorized Domains in Firebase</span>
+                      </div>
+                      <p className="text-[9.5px] text-slate-400 leading-relaxed">
+                        You must add the current applet host URLs to your **Authorized Domains** list in Firebase Console under Authentication &gt; Settings &gt; Authorized Domains.
+                      </p>
+                      <div className="space-y-1.5 font-mono text-[8.5px] pt-1">
+                        <span className="text-slate-500 text-[8px] uppercase font-bold block mb-1">Required Authorized Domains:</span>
+                        {[
+                          'localhost',
+                          'gen-lang-client-0929377753.firebaseapp.com',
+                          'ais-dev-xjqofml5ly3pynz5aikcud-98840122376.europe-west2.run.app',
+                          'ais-pre-xjqofml5ly3pynz5aikcud-98840122376.europe-west2.run.app'
+                        ].map((domain) => (
+                          <div key={domain} className="flex justify-between items-center bg-slate-950/80 px-2.5 py-1.5 rounded-lg border border-slate-850/80">
+                            <span className="text-slate-300 truncate select-all">{domain}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(domain);
+                                setSettingsSuccess(`Copied: ${domain}`);
+                              }}
+                              className="text-[8px] uppercase text-orange-500 hover:text-orange-400 font-bold shrink-0"
+                            >
+                              Copy
+                            </button>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   </div>
 
-                  {/* Step 2: Firebase Console and authorized domains */}
-                  <div className="p-4 bg-slate-950/60 border border-slate-900 rounded-2xl space-y-3">
-                    <div className="flex items-center gap-2">
-                      <span className="flex items-center justify-center w-5 h-5 bg-orange-500/15 border border-orange-500/30 text-orange-500 rounded-lg text-[10px] font-bold font-mono">02</span>
-                      <span className="text-[10px] font-black uppercase text-slate-200 tracking-wider">Authorized Domains in Firebase</span>
-                    </div>
-                    <p className="text-[9.5px] text-slate-400 leading-relaxed">
-                      You must add the current applet host URLs to your **Authorized Domains** list in Firebase Console under Authentication &gt; Settings &gt; Authorized Domains.
-                    </p>
-                    <div className="space-y-1.5 font-mono text-[8.5px] pt-1">
-                      <span className="text-slate-500 text-[8px] uppercase font-bold block mb-1">Required Authorized Domains:</span>
-                      {[
-                        'localhost',
-                        'gen-lang-client-0929377753.firebaseapp.com',
-                        'ais-dev-xjqofml5ly3pynz5aikcud-98840122376.europe-west2.run.app',
-                        'ais-pre-xjqofml5ly3pynz5aikcud-98840122376.europe-west2.run.app'
-                      ].map((domain) => (
-                        <div key={domain} className="flex justify-between items-center bg-slate-950/80 px-2.5 py-1.5 rounded-lg border border-slate-850/80">
-                          <span className="text-slate-300 truncate select-all">{domain}</span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              navigator.clipboard.writeText(domain);
-                              setSettingsSuccess(`Copied: ${domain}`);
-                            }}
-                            className="text-[8px] uppercase text-orange-500 hover:text-orange-400 font-bold shrink-0"
-                          >
-                            Copy
-                          </button>
-                        </div>
-                      ))}
-                    </div>
+                  {/* Common Troubleshooting */}
+                  <div className="p-4 bg-orange-500/5 border border-orange-500/10 rounded-2xl space-y-2">
+                    <span className="text-[10px] font-black uppercase text-orange-500 tracking-wider flex items-center gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5" />
+                      Crucial Troubleshooting Parameters:
+                    </span>
+                    <ul className="text-[9.5px] text-slate-400 space-y-1.5 list-disc pl-4 leading-relaxed">
+                      <li>
+                        <strong>auth/popup-closed-by-user:</strong> Caused if the GitHub popup is closed before authorizing. Ensure you don't close the window manually.
+                      </li>
+                      <li>
+                        <strong>auth/configuration-not-found:</strong> Ensure you have enabled the <strong>GitHub provider</strong> in the Firebase Auth console and set both Client ID and Client Secret correctly.
+                      </li>
+                      <li>
+                        <strong>Email Access Error:</strong> If GitHub returns an error regarding "no email", ensure your GitHub profile has a public-facing email address, or that you've enabled the option to read the user's primary/verified email inside the GitHub Auth provider configuration in Firebase.
+                      </li>
+                    </ul>
                   </div>
                 </div>
-
-                {/* Common Troubleshooting */}
-                <div className="p-4 bg-orange-500/5 border border-orange-500/10 rounded-2xl space-y-2">
-                  <span className="text-[10px] font-black uppercase text-orange-500 tracking-wider flex items-center gap-1.5">
-                    <AlertCircle className="w-3.5 h-3.5" />
-                    Crucial Troubleshooting Parameters:
-                  </span>
-                  <ul className="text-[9.5px] text-slate-400 space-y-1.5 list-disc pl-4 leading-relaxed">
-                    <li>
-                      <strong>auth/popup-closed-by-user:</strong> Caused if the GitHub popup is closed before authorizing. Ensure you don't close the window manually.
-                    </li>
-                    <li>
-                      <strong>auth/configuration-not-found:</strong> Ensure you have enabled the <strong>GitHub provider</strong> in the Firebase Auth console and set both Client ID and Client Secret correctly.
-                    </li>
-                    <li>
-                      <strong>Email Access Error:</strong> If GitHub returns an error regarding "no email", ensure your GitHub profile has a public-facing email address, or that you've enabled the option to read the user's primary/verified email inside the GitHub Auth provider configuration in Firebase.
-                    </li>
-                  </ul>
-                </div>
-              </div>
+              )}
             </div>
           )}
 

@@ -8,6 +8,8 @@ interface SecureImageUploadProps {
   onClear: () => void;
   folder?: string;
   label?: string;
+  accept?: string;
+  maxSize?: number;
 }
 
 export default function SecureImageUpload({ 
@@ -15,7 +17,9 @@ export default function SecureImageUpload({
   onUploadSuccess, 
   onClear, 
   folder = 'uploads', 
-  label = 'PNG / JPG PICTURE (Max 2MB)' 
+  label = 'PNG / JPG PICTURE (Max 2MB)',
+  accept = 'image/*',
+  maxSize = 2 * 1024 * 1024
 }: SecureImageUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -24,8 +28,8 @@ export default function SecureImageUpload({
 
   const handleFile = async (file: File) => {
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) {
-      setUploadError('File size must be under 2MB.');
+    if (file.size > maxSize) {
+      setUploadError(`File size must be under ${(maxSize / (1024 * 1024)).toFixed(0)}MB.`);
       return;
     }
     setUploadError('');
@@ -127,7 +131,7 @@ export default function SecureImageUpload({
         >
           <input
             type="file"
-            accept="image/*"
+            accept={accept}
             onChange={onChange}
             disabled={uploading}
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"

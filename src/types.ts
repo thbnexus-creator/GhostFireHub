@@ -141,12 +141,18 @@ export interface UserProfile {
     bankName: string;
     accountNumber: string;
     accountName: string;
-    status: 'Pending' | 'Approved' | 'Declined' | 'Completed';
+    status: 'Pending' | 'Initiated' | 'Processing' | 'Confirmed' | 'Completed' | 'Approved' | 'Declined' | 'Refunded' | 'Flagged' | 'Disputed' | 'Rejected';
     timestamp: string;
     payoutMethod?: string;
     payoutRef?: string;
     payoutDetails?: string;
     completedAt?: string;
+    estimatedPayoutTime?: string;
+    dispute?: {
+      reason: string;
+      proofUrl: string;
+      timestamp: string;
+    };
   }[]; // New: List of withdrawal requests (e.g. to Nigeria bank account)
   savedRecommendations: {
     id: string;

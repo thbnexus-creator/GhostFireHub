@@ -189,16 +189,30 @@ export default function App() {
     });
   }, [activeTab, currentUser]);
 
-  // Periodic automatic Sponsor Ad Popup for unregistered guests (every 90 seconds)
+  // Periodic automatic Sponsor Ad Popup for unregistered guests (immediately and then dynamically after closing)
   useEffect(() => {
     if (currentUser) return; // Only for unregistered guest users
 
-    const adInterval = setInterval(() => {
+    // Load first ad upon entering (with a 2s delay to let the site load and be visible)
+    const initialAdTimer = setTimeout(() => {
       setShowPopupAd(true);
-    }, 90000); // Pops up automatically every 1.5 minutes (90s)
+    }, 2000);
 
-    return () => clearInterval(adInterval);
+    return () => {
+      clearTimeout(initialAdTimer);
+    };
   }, [currentUser]);
+
+  // Dynamic ad pop-up recurrence cycle: 90 seconds of uninterrupted usage, then ad re-appears
+  useEffect(() => {
+    if (currentUser) return;
+    if (!showPopupAd) {
+      const adRecurrenceTimer = setTimeout(() => {
+        setShowPopupAd(true);
+      }, 90000); // 90 seconds (1.5 minutes) of clean, ad-free app usage
+      return () => clearTimeout(adRecurrenceTimer);
+    }
+  }, [showPopupAd, currentUser]);
 
   // Auth triggers
   const handleAuthSuccess = (user: UserProfile) => {
@@ -360,7 +374,7 @@ export default function App() {
     }
   };
 
-  const isAdmin = currentUser?.role === 'Administrator' || currentUser?.role === 'Staff';
+  const isAdmin = currentUser?.role === 'Administrator' || currentUser?.role === 'Staff' || currentUser?.email === 'ghostfirehub@gmail.com' || currentUser?.email === 'ghostfire@ghost.com';
 
   return (
     <div className={`min-h-screen bg-slate-950 text-slate-200 font-sans flex flex-col selection:bg-orange-500/30 selection:text-orange-200 ${isHighVisibility ? 'high-visibility' : ''}`}>
@@ -1083,6 +1097,10 @@ export default function App() {
           <SponsorAdPopup 
             currentUser={currentUser} 
             onAdClose={() => setShowPopupAd(false)} 
+            onNavigateToAuth={() => {
+              setShowPopupAd(false);
+              setActiveTab('Auth');
+            }}
           />
         )}
       </AnimatePresence>

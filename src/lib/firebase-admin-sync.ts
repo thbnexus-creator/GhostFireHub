@@ -185,8 +185,8 @@ export async function loadFromFirestore() {
     try {
       db = await fetchAllCollections(currentDb);
     } catch (firstError: any) {
-      console.warn('Initial Firestore database connection query failed, attempting default database fallback...', firstError.message || firstError);
       if (currentDb !== adminDbDefault) {
+        console.log(`Custom database was not accessible (${firstError.message || firstError}). Gracefully falling back to default database...`);
         currentDb = adminDbDefault;
         db = await fetchAllCollections(currentDb);
       } else {
@@ -209,7 +209,7 @@ export async function loadFromFirestore() {
     console.log('Successfully loaded database from Firestore.');
     return db;
   } catch (error: any) {
-    console.warn('Could not complete loading database from Firestore (will fall back to local JSON database):', error.message || error);
+    console.log('Could not complete loading database from Firestore (will fall back to local JSON database):', error.message || error);
     return null;
   }
 }

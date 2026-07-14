@@ -23,6 +23,7 @@ import {
   Terminal,
   Clipboard,
   Sliders,
+  RefreshCw,
   Check,
   ArrowRight,
   Coins,
@@ -60,7 +61,7 @@ export default function AdminWorkspace({
   onDeletePost,
   userEmail
 }: AdminProps) {
-  const [activeWorkspace, setActiveWorkspace] = useState<'Products' | 'Posts' | 'Giveaways' | 'AuditLogs' | 'Secrets' | 'GameIssues' | 'Users' | 'Monetization' | 'PendingVendors'>('Products');
+  const [activeWorkspace, setActiveWorkspace] = useState<'Products' | 'Posts' | 'Giveaways' | 'AuditLogs' | 'Secrets' | 'GameIssues' | 'Users' | 'Monetization' | 'PendingVendors' | 'Payouts'>('Products');
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
 
@@ -165,7 +166,7 @@ export default function AdminWorkspace({
     }, 2000);
   };
 
-  const handleApproveUserPayout = async (payoutId: string, status: 'Approved' | 'Rejected') => {
+  const handleApproveUserPayout = async (payoutId: string, status: 'Approved' | 'Rejected' | 'Flagged') => {
     try {
       const res = await fetch(`/api/admin/payouts/${payoutId}/status`, {
         method: 'POST',
@@ -514,10 +515,10 @@ export default function AdminWorkspace({
   };
 
   useEffect(() => {
-    if (activeWorkspace === 'Users' || activeWorkspace === 'Monetization') {
+    if (activeWorkspace === 'Users' || activeWorkspace === 'Monetization' || activeWorkspace === 'Payouts') {
       loadUsers();
     }
-    if (activeWorkspace === 'Monetization') {
+    if (activeWorkspace === 'Monetization' || activeWorkspace === 'Payouts') {
       loadUserPayouts();
     }
     if (activeWorkspace === 'PendingVendors') {
@@ -1192,6 +1193,14 @@ export default function AdminWorkspace({
         >
           <Coins className="w-3.5 h-3.5" />
           <span>Monetization</span>
+        </button>
+
+        <button
+          onClick={() => { setActiveWorkspace('Payouts'); loadUserPayouts(); loadUsers(); }}
+          className={`py-2 rounded-xl flex items-center justify-center gap-1.5 transition-all ${activeWorkspace === 'Payouts' ? 'bg-orange-600 text-slate-950 font-black' : 'text-slate-400 hover:text-slate-200'}`}
+        >
+          <Sliders className="w-3.5 h-3.5 text-emerald-400" />
+          <span>Payouts Manager</span>
         </button>
 
         <button
@@ -2998,6 +3007,246 @@ export default function AdminWorkspace({
         </div>
       )}
 
+      {/* PAYOUT MANAGEMENT VIEW (ADMIN ONLY) */}
+      {activeWorkspace === 'Payouts' && (
+        <div className="col-span-12 space-y-6">
+          <div className="bg-slate-900/40 border border-slate-850 p-6 rounded-3xl space-y-6 animate-fadeIn">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-850 pb-5">
+              <div>
+                <h3 className="text-sm font-black uppercase text-orange-400 tracking-wider flex items-center gap-2">
+                  <Sliders className="w-5 h-5 text-emerald-400 animate-pulse" />
+                  On-Chain Payout & Support Ticket Console
+                </h3>
+                <p className="text-xs text-slate-400 mt-1 font-sans leading-relaxed">
+                  Approve or decline pending USDT TRC-20 withdrawals, review submitted support tickets with screenshot proofs, and track real disbursements on-chain.
+                </p>
+              </div>
+              <button
+                onClick={() => { loadUserPayouts(); loadUsers(); }}
+                className="px-4 py-2 bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-200 hover:text-white rounded-xl text-xs font-mono font-bold uppercase transition-all flex items-center gap-1.5 shrink-0 self-start sm:self-center"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Refresh Ledger
+              </button>
+            </div>
+
+            {/* Stats Row */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="p-4 bg-slate-950/60 border border-slate-850 rounded-2xl space-y-1">
+                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block">Total Requests</span>
+                <span className="text-xl font-mono font-black text-white">{userPayouts.length}</span>
+                <span className="text-[9.5px] text-slate-400 block font-sans">Multi-Chain Transactions</span>
+              </div>
+              <div className="p-4 bg-slate-950/60 border border-slate-850 rounded-2xl space-y-1">
+                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block">Pending Approval</span>
+                <span className="text-xl font-mono font-black text-amber-500">{userPayouts.filter(p => p.status === 'Pending').length}</span>
+                <span className="text-[9.5px] text-slate-400 block font-sans">Awaiting Verification</span>
+              </div>
+              <div className="p-4 bg-slate-950/60 border border-slate-850 rounded-2xl space-y-1">
+                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block">Disputed & Support Tickets</span>
+                <span className="text-xl font-mono font-black text-rose-500">{userPayouts.filter(p => p.status === 'Disputed' || p.status === 'Flagged').length}</span>
+                <span className="text-[9.5px] text-slate-400 block font-sans">Screenshot Proof Uploaded</span>
+              </div>
+              <div className="p-4 bg-slate-950/60 border border-slate-850 rounded-2xl space-y-1">
+                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block">Total Disbursed Volume</span>
+                <span className="text-xl font-mono font-black text-emerald-400">
+                  ${userPayouts.filter(p => p.status === 'Completed' || p.status === 'Approved').reduce((acc, p) => acc + p.amount, 0).toFixed(2)} USDT
+                </span>
+                <span className="text-[9.5px] text-slate-400 block font-sans">Verified TRON / Binance Pay</span>
+              </div>
+            </div>
+
+            {/* Main Ledger */}
+            {loadingPayouts ? (
+              <div className="py-12 text-center text-slate-500 text-xs font-mono animate-pulse">
+                Fetching platform-wide withdrawal requests...
+              </div>
+            ) : userPayouts.length === 0 ? (
+              <div className="py-12 text-center border border-dashed border-slate-850 rounded-3xl text-slate-500 text-xs font-sans leading-relaxed">
+                No withdrawal requests found. Standard player and vendor direct withdrawals are currently disabled on the platform.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Active Withdrawal Requests Ledger</h4>
+                <div className="grid grid-cols-1 gap-4">
+                  {userPayouts.map((req) => (
+                    <div 
+                      key={req.id} 
+                      className={`p-5 bg-slate-950 border rounded-2xl space-y-4 relative overflow-hidden transition-all hover:border-slate-850 ${
+                        req.status === 'Completed' || req.status === 'Approved'
+                          ? 'border-emerald-500/20 bg-emerald-500/[0.005]'
+                          : req.status === 'Disputed' || req.status === 'Flagged'
+                          ? 'border-rose-500/20 bg-rose-500/[0.005]'
+                          : 'border-slate-850'
+                      }`}
+                    >
+                      {/* Top metadata line */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-900/60">
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-black font-mono text-white">{req.id}</span>
+                            <span className="text-[10px] text-slate-400 font-sans">
+                              by <strong className="text-slate-300">{req.username}</strong> ({req.userEmail})
+                            </span>
+                          </div>
+                          <div className="text-[9.5px] text-slate-500 font-mono">
+                            Requested: {new Date(req.timestamp).toLocaleString()} • Est. Processing: <span className="text-orange-400 font-semibold">{req.estimatedPayoutTime || '24-48 hours'}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[8.5px] font-mono uppercase px-2 py-0.5 rounded-md font-bold border ${
+                            req.status === 'Pending' || req.status === 'Initiated'
+                              ? 'bg-amber-500/10 text-amber-500 border-amber-500/20 animate-pulse'
+                              : req.status === 'Processing'
+                              ? 'bg-sky-500/10 text-sky-400 border-sky-500/20 animate-pulse'
+                              : req.status === 'Flagged' || req.status === 'Disputed'
+                              ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                              : req.status === 'Completed' || req.status === 'Approved'
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                              : 'bg-red-500/10 text-red-400 border-red-500/20'
+                          }`}>
+                            {req.status}
+                          </span>
+                          <span className="text-sm font-black font-mono text-emerald-400">${req.amount.toFixed(2)} USDT</span>
+                        </div>
+                      </div>
+
+                      {/* Details row */}
+                      <div className="grid grid-cols-1 md:grid-cols-12 gap-4 text-xs font-sans">
+                        <div className="md:col-span-8 space-y-2">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-3 bg-slate-900/40 rounded-xl border border-slate-850/60">
+                            <div>
+                              <span className="text-[8.5px] font-bold text-slate-500 uppercase tracking-wider block">Payout Method</span>
+                              <span className="text-[11px] text-slate-300 font-mono font-bold uppercase">{req.payoutMethod || 'USDT TRC-20'}</span>
+                            </div>
+                            <div>
+                              <span className="text-[8.5px] font-bold text-slate-500 uppercase tracking-wider block">Wallet Address / Pay ID</span>
+                              <span className="text-[11px] text-slate-300 font-mono font-bold select-all break-all">{req.accountNumber || req.cryptoAddress || req.binancePayId}</span>
+                            </div>
+                          </div>
+
+                          {req.payoutDetails && (
+                            <div className="p-3 bg-slate-900 border border-slate-850 rounded-xl text-[10px] font-mono text-slate-400 leading-normal">
+                              {req.payoutDetails}
+                            </div>
+                          )}
+
+                          {req.payoutRef && (
+                            <div className="p-3 bg-slate-900 border border-slate-850 rounded-xl text-[10px] font-mono text-slate-400 flex items-center gap-2">
+                              <span className="font-bold text-slate-500 uppercase text-[8.5px]">Tx ID Reference:</span>
+                              <span className="text-slate-300 font-bold select-all font-mono">{req.payoutRef}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Verification & Blockchain query actions */}
+                        <div className="md:col-span-4 bg-slate-900/20 border border-slate-850/40 p-3.5 rounded-xl space-y-3 flex flex-col justify-between">
+                          <div className="space-y-1">
+                            <span className="text-[9px] font-black uppercase text-slate-500 block tracking-wider">Blockchain Audit Verification</span>
+                            <p className="text-[9.5px] text-slate-400 leading-relaxed font-sans">
+                              Inspect target address on TRONGRID / TRONSCAN to audit live balances or check if funds already transferred.
+                            </p>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <a
+                              href={`https://tronscan.org/#/address/${req.accountNumber || req.cryptoAddress}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="w-full py-2 bg-slate-900 border border-slate-800 hover:border-slate-700 text-[10px] font-mono font-bold uppercase rounded-lg text-slate-200 hover:text-white transition-all text-center block"
+                            >
+                              🔍 Verify Tronscan Ledger
+                            </a>
+                            <p className="text-[8.5px] text-slate-500 font-mono text-center leading-normal">
+                              Default Destination: TYaPAvYJGML1WyfbXAYcx3TGATMYc1bZeT
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Support request ticket dispute attachments */}
+                      {req.dispute && (
+                        <div className="p-4 bg-rose-950/20 border border-rose-900/30 rounded-2xl space-y-3 animate-fadeIn">
+                          <div className="flex items-center gap-1.5 text-xs font-black text-rose-400 font-mono">
+                            <AlertCircle className="w-4 h-4" />
+                            SUPPORT REQUEST TICKET DETAILS
+                          </div>
+                          <div className="text-[10.5px] text-slate-300 space-y-1 font-sans">
+                            <p className="font-bold uppercase text-[9px] text-slate-500">User Statement:</p>
+                            <p className="italic bg-slate-950/40 p-2.5 rounded-lg border border-slate-900 leading-relaxed">
+                              "{req.dispute.reason || 'No statement provided.'}"
+                            </p>
+                          </div>
+
+                          {req.dispute.proofUrl && (
+                            <div className="space-y-1.5">
+                              <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Attached Reference ID/Screenshot Statement Proof:</span>
+                              <div className="relative group max-w-sm rounded-xl overflow-hidden border border-slate-800 bg-slate-950 p-1">
+                                <img 
+                                  src={req.dispute.proofUrl} 
+                                  alt="Screenshot Proof statement" 
+                                  referrerPolicy="no-referrer"
+                                  className="w-full max-h-48 object-contain rounded-lg transition-all group-hover:scale-[1.02]"
+                                />
+                                <a 
+                                  href={req.dispute.proofUrl} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="absolute bottom-2 right-2 px-2.5 py-1 bg-slate-950/90 border border-slate-800 text-white rounded font-mono text-[9px] hover:bg-slate-900 transition-colors"
+                                >
+                                  Open full image
+                                </a>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Controls Row */}
+                      <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-900/60 pt-3">
+                        <span className="text-[10px] text-slate-500 italic mr-auto font-sans">
+                          {req.status === 'Completed' || req.status === 'Approved' ? '✓ Settled and recorded on blockchain ledger' : '⚠ Action required'}
+                        </span>
+
+                        {req.status !== 'Completed' && req.status !== 'Approved' && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleApproveUserPayout(req.id, 'Approved')}
+                              className="px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-slate-950 font-black uppercase text-[10px] tracking-wider rounded-xl transition-all cursor-pointer shadow-md shadow-emerald-600/10"
+                            >
+                              ✓ Approve & Complete Payout
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleApproveUserPayout(req.id, 'Flagged')}
+                              className="px-3 py-2 bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 text-rose-400 hover:text-rose-300 text-[10px] font-mono font-bold uppercase rounded-xl transition-all cursor-pointer"
+                            >
+                              ⚠ Flag / Audit Transaction
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleApproveUserPayout(req.id, 'Rejected')}
+                              className="px-3 py-2 bg-red-950/20 hover:bg-red-900/20 text-red-400 hover:text-red-300 border border-red-900/30 rounded-xl text-[10px] font-mono font-bold uppercase transition-all cursor-pointer"
+                            >
+                              ✕ Decline / Reject
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* PENDING VENDORS MANAGEMENT VIEW */}
       {activeWorkspace === 'PendingVendors' && (
         <div className="col-span-12 space-y-6">
@@ -3376,11 +3625,20 @@ export default function AdminWorkspace({
                       </div>
                     </div>
 
-                    <div className="space-y-1">
-                      <label className="text-[8.5px] font-extrabold uppercase text-slate-400 tracking-wider">Ad Video URL (Optional MP4 or YouTube Link)</label>
+                    <div className="space-y-1.5">
+                      <label className="text-[8.5px] font-extrabold uppercase text-slate-400 tracking-wider">Ad Video / Media Upload (MP4, WebM or Image)</label>
+                      <SecureImageUpload
+                        imageUrl={adVideoUrl}
+                        onUploadSuccess={(url) => setAdVideoUrl(url)}
+                        onClear={() => setAdVideoUrl('')}
+                        folder="sponsor-videos"
+                        accept="video/*,image/*"
+                        label="MP4 / WebM Video or PNG/JPG (Max 10MB)"
+                        maxSize={10 * 1024 * 1024}
+                      />
                       <input
-                        type="url"
-                        placeholder="e.g. https://example.com/ad_video.mp4 or https://youtu.be/..."
+                        type="text"
+                        placeholder="Or paste direct video URL / YouTube Link here..."
                         value={adVideoUrl}
                         onChange={(e) => setAdVideoUrl(e.target.value)}
                         className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-sans text-white outline-none focus:border-orange-500 placeholder:text-slate-700"
