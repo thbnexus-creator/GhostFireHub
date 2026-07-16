@@ -111,29 +111,6 @@ export default function MonetizationLab({ user, onUpdateUser }: MonetizationProp
   const [savingBankDetails, setSavingBankDetails] = useState(false);
   const [vendorConvertOption, setVendorConvertOption] = useState<'50k' | '100k'>('50k');
 
-  // Dispute state variables
-  const [disputeId, setDisputeId] = useState<string | null>(null);
-  const [disputeReason, setDisputeReason] = useState<string>('');
-  const [disputeProofUrl, setDisputeProofUrl] = useState<string>('');
-  const [disputeSubmitting, setDisputeSubmitting] = useState<boolean>(false);
-
-  // Time ticker state to force real-time re-renders for countdowns
-  const [timeTicker, setTimeTicker] = useState<number>(0);
-
-  // Real-time withdrawal countdown ticker
-  useEffect(() => {
-    const hasActiveWithdrawals = withdrawalRequests.some(req => 
-      ['Pending', 'Initiated', 'Processing', 'Confirmed'].includes(req.status)
-    );
-    if (!hasActiveWithdrawals) return;
-
-    const interval = setInterval(() => {
-      setTimeTicker(prev => prev + 1);
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [withdrawalRequests, timeTicker]);
-
   // Sharing states
   const [sharingInProgress, setSharingInProgress] = useState(false);
   const sharesCount = user.sharesCount ?? 0;
@@ -259,59 +236,6 @@ export default function MonetizationLab({ user, onUpdateUser }: MonetizationProp
     }
   }, [user.savedRecommendations]);
 
-  // Poll pending withdrawal requests and automatically transition through status states (Initiated -> Processing -> Confirmed -> Completed)
-  useEffect(() => {
-    let hasPending = false;
-    withdrawalRequests.forEach(req => {
-      if (['Pending', 'Initiated', 'Processing', 'Confirmed'].includes(req.status)) {
-        hasPending = true;
-      }
-    });
-
-    if (!hasPending) return;
-
-    const interval = setInterval(() => {
-      let changed = false;
-      const updatedRequests = withdrawalRequests.map(req => {
-        if (['Pending', 'Initiated', 'Processing', 'Confirmed'].includes(req.status)) {
-          const elapsedSecs = (Date.now() - new Date(req.timestamp).getTime()) / 1000;
-          if (elapsedSecs >= 120) {
-            changed = true;
-            return {
-              ...req,
-              status: 'Completed'
-            };
-          } else if (elapsedSecs >= 75 && req.status !== 'Confirmed') {
-            changed = true;
-            return {
-              ...req,
-              status: 'Confirmed'
-            };
-          } else if (elapsedSecs >= 30 && elapsedSecs < 75 && req.status !== 'Processing') {
-            changed = true;
-            return {
-              ...req,
-              status: 'Processing'
-            };
-          } else if (elapsedSecs < 30 && req.status === 'Pending') {
-            changed = true;
-            return {
-              ...req,
-              status: 'Initiated'
-            };
-          }
-        }
-        return req;
-      });
-
-      if (changed) {
-        handleSaveMetrics(earningsBalance, withdrawnTotal, touchVectorsLogged, updatedRequests);
-      }
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [withdrawalRequests, earningsBalance, withdrawnTotal, touchVectorsLogged]);
-
   // Helper to save metrics to Firestore via server.ts api/auth/update
   const handleSaveMetrics = async (
     newBalance: number, 
@@ -341,31 +265,6 @@ export default function MonetizationLab({ user, onUpdateUser }: MonetizationProp
       }
     } catch (err) {
       console.error('Error auto-syncing monetization metrics:', err);
-    }
-  };
-
-  // Cancel & Reverse a pending/processing transaction instantly and refund the balance
-  const handleCancelAndReverse = async (requestId: string, amount: number) => {
-    try {
-      const updatedRequests = withdrawalRequests.map(req => {
-        if (req.id === requestId) {
-          return {
-            ...req,
-            status: 'Refunded',
-            payoutDetails: `✕ Transaction Cancelled & Reversed: ${amount.toFixed(2)} USDT has been successfully refunded back to your active balance instantly.`
-          };
-        }
-        return req;
-      });
-
-      const nextBalance = earningsBalance + amount;
-      const nextWithdrawnTotal = Math.max(0, withdrawnTotal - amount);
-
-      await handleSaveMetrics(nextBalance, nextWithdrawnTotal, touchVectorsLogged, updatedRequests);
-      setFormSuccess(`✓ Transaction ${requestId} has been successfully cancelled, and ${amount.toFixed(2)} USDT has been reversed back to your active balance!`);
-    } catch (err) {
-      console.error('Error reversing transaction:', err);
-      setFormError('Failed to process reversal request. Please try again.');
     }
   };
 
@@ -586,10 +485,14 @@ export default function MonetizationLab({ user, onUpdateUser }: MonetizationProp
             Tactile Telemetry Monetization & Esports Ad Lab
           </div>
           <h2 className="text-xl font-black uppercase tracking-tight text-white">
-            Monetize Your Gaming Touch Vectors & Earn Funds
+            {isAdminUser ? "Monetize Your Gaming Touch Vectors & Earn Funds" : "Calibrate Gaming Touch Vectors & Optimize Performance"}
           </h2>
           <p className="text-xs text-slate-400 max-w-2xl leading-relaxed">
-            Every screen touch sensitivity diagnostic parameter and hardware model vector you log on GhostFireHub is valuable telemetry. License this data to smartphone brands or test premium esports partner ads to earn actual funds, then withdraw instantly to your <span className="text-orange-400 font-bold">TRC-20 USDT Wallet or Binance Pay ID</span>.
+            {isAdminUser ? (
+              <>Every screen touch sensitivity diagnostic parameter and hardware model vector you log on GhostFireHub is valuable telemetry. License this data to smartphone brands or test premium esports partner ads to earn actual funds, then withdraw instantly to your <span className="text-orange-400 font-bold">TRC-20 USDT Wallet or Binance Pay ID</span>.</>
+            ) : (
+              <>Every screen touch sensitivity diagnostic parameter and hardware model vector you log on GhostFireHub is valuable telemetry. Calibrate your tactile parameters to research performance analysis and test premium esports partner ads to check display latency.</>
+            )}
           </p>
         </div>
       </div>
@@ -649,29 +552,31 @@ export default function MonetizationLab({ user, onUpdateUser }: MonetizationProp
       </div>
 
       {/* Main Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className={`grid grid-cols-1 ${isAdminUser ? 'md:grid-cols-3' : 'md:grid-cols-1'} gap-4`}>
         
-        {/* Earnings Balance */}
-        <div className="bg-slate-900/40 border border-slate-850 p-5 rounded-2xl flex flex-col justify-between space-y-4">
-          <div className="flex justify-between items-start">
-            <div>
-              <span className="text-[10px] text-slate-500 font-mono uppercase font-black tracking-wider">Available Earnings Balance</span>
-              <div className="text-2xl font-black font-mono text-white mt-1.5 flex items-baseline gap-1.5">
-                <span>{earningsBalance.toFixed(2)} USDT</span>
+        {/* Earnings Balance (Admin Only) */}
+        {isAdminUser && (
+          <div className="bg-slate-900/40 border border-slate-850 p-5 rounded-2xl flex flex-col justify-between space-y-4">
+            <div className="flex justify-between items-start">
+              <div>
+                <span className="text-[10px] text-slate-500 font-mono uppercase font-black tracking-wider">Available Earnings Balance</span>
+                <div className="text-2xl font-black font-mono text-white mt-1.5 flex items-baseline gap-1.5">
+                  <span>{earningsBalance.toFixed(2)} USDT</span>
+                </div>
+                <p className="text-[10.5px] text-emerald-400 font-medium font-sans mt-1">
+                  100% Secure Cryptographic Yields
+                </p>
               </div>
-              <p className="text-[10.5px] text-emerald-400 font-medium font-sans mt-1">
-                100% Secure Cryptographic Yields
-              </p>
+              <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl">
+                <Wallet className="w-5 h-5" />
+              </div>
             </div>
-            <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl">
-              <Wallet className="w-5 h-5" />
+            <div className="text-[9.5px] font-mono text-slate-500 uppercase border-t border-slate-850 pt-2 flex justify-between">
+              <span>Valued at: $14.50/vector license</span>
+              <span className="text-orange-400 font-bold">Secured Payouts</span>
             </div>
           </div>
-          <div className="text-[9.5px] font-mono text-slate-500 uppercase border-t border-slate-850 pt-2 flex justify-between">
-            <span>Valued at: $14.50/vector license</span>
-            <span className="text-orange-400 font-bold">Secured Payouts</span>
-          </div>
-        </div>
+        )}
 
         {/* touchVectorsLogged */}
         <div className="bg-slate-900/40 border border-slate-850 p-5 rounded-2xl flex flex-col justify-between space-y-4">
@@ -681,56 +586,78 @@ export default function MonetizationLab({ user, onUpdateUser }: MonetizationProp
               <div className="text-2xl font-black font-mono text-orange-500 mt-1.5">
                 {touchVectorsLogged.toLocaleString()} Coordinates
               </div>
-              <p className="text-[10.5px] text-slate-400 mt-1">
-                Est. value: ${(touchVectorsLogged * 0.35).toFixed(2)} USDT
-              </p>
+              {isAdminUser ? (
+                <p className="text-[10.5px] text-slate-400 mt-1">
+                  Est. value: ${(touchVectorsLogged * 0.35).toFixed(2)} USDT
+                </p>
+              ) : (
+                <p className="text-[10.5px] text-slate-400 mt-1">
+                  Touch coordinates logged for offline calibration diagnostics
+                </p>
+              )}
             </div>
             <div className="p-3 bg-orange-500/10 border border-orange-500/20 text-orange-500 rounded-xl">
               <Activity className="w-5 h-5 animate-pulse" />
             </div>
           </div>
           <div className="border-t border-slate-850 pt-2">
-            <button
-              onClick={handleLicenseVectors}
-              disabled={touchVectorsLogged === 0 || licensingInProcess}
-              className="w-full py-2 bg-orange-600 hover:bg-orange-500 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-black uppercase text-[10px] tracking-widest rounded-xl transition-all flex justify-center items-center gap-1.5 cursor-pointer"
-            >
-              {licensingInProcess ? (
-                <>
-                  <span className="w-3.5 h-3.5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></span>
-                  <span>Escrow Bidding Process...</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-3.5 h-3.5 text-slate-950 fill-current" />
-                  <span>License & Sell Logged Vectors</span>
-                </>
-              )}
-            </button>
+            {isAdminUser ? (
+              <button
+                onClick={handleLicenseVectors}
+                disabled={touchVectorsLogged === 0 || licensingInProcess}
+                className="w-full py-2 bg-orange-600 hover:bg-orange-500 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-black uppercase text-[10px] tracking-widest rounded-xl transition-all flex justify-center items-center gap-1.5 cursor-pointer"
+              >
+                {licensingInProcess ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></span>
+                    <span>Escrow Bidding Process...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-3.5 h-3.5 text-slate-950 fill-current" />
+                    <span>License & Sell Logged Vectors</span>
+                  </>
+                )}
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  handleSaveMetrics(0, withdrawnTotal, 0, withdrawalRequests);
+                  alert('Tactile telemetry coordinates validated and synchronized with your local hardware profile!');
+                }}
+                disabled={touchVectorsLogged === 0}
+                className="w-full py-2 bg-orange-600 hover:bg-orange-500 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-black uppercase text-[10px] tracking-widest rounded-xl transition-all flex justify-center items-center gap-1.5 cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-slate-950 fill-current" />
+                <span>Validate & Synchronize Logs</span>
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Total Withdrawals */}
-        <div className="bg-slate-900/40 border border-slate-850 p-5 rounded-2xl flex flex-col justify-between space-y-4">
-          <div className="flex justify-between items-start">
-            <div>
-              <span className="text-[10px] text-slate-500 font-mono uppercase font-black tracking-wider">Total USDT Withdrawals</span>
-              <div className="text-2xl font-black font-mono text-white mt-1.5">
-                {withdrawnTotal.toFixed(2)} USDT
+        {/* Total Withdrawals (Admin Only) */}
+        {isAdminUser && (
+          <div className="bg-slate-900/40 border border-slate-850 p-5 rounded-2xl flex flex-col justify-between space-y-4">
+            <div className="flex justify-between items-start">
+              <div>
+                <span className="text-[10px] text-slate-500 font-mono uppercase font-black tracking-wider">Total USDT Withdrawals</span>
+                <div className="text-2xl font-black font-mono text-white mt-1.5">
+                  {withdrawnTotal.toFixed(2)} USDT
+                </div>
+                <p className="text-[10.5px] text-slate-400 mt-1">
+                  Successfully processed on-chain instantly
+                </p>
               </div>
-              <p className="text-[10.5px] text-slate-400 mt-1">
-                Successfully processed on-chain instantly
-              </p>
+              <div className="p-3 bg-purple-500/10 border border-purple-500/20 text-purple-400 rounded-xl">
+                <Globe className="w-5 h-5" />
+              </div>
             </div>
-            <div className="p-3 bg-purple-500/10 border border-purple-500/20 text-purple-400 rounded-xl">
-              <Globe className="w-5 h-5" />
+            <div className="text-[9.5px] font-mono text-slate-500 uppercase border-t border-slate-850 pt-2 flex justify-between">
+              <span>Region: Global Crypto Consensus</span>
+              <span className="text-emerald-400 font-bold">100% Legit Escrow</span>
             </div>
           </div>
-          <div className="text-[9.5px] font-mono text-slate-500 uppercase border-t border-slate-850 pt-2 flex justify-between">
-            <span>Region: Global Crypto Consensus</span>
-            <span className="text-emerald-400 font-bold">100% Legit Escrow</span>
-          </div>
-        </div>
+        )}
 
       </div>
 
@@ -760,8 +687,8 @@ export default function MonetizationLab({ user, onUpdateUser }: MonetizationProp
       {/* Middle Section: Ads on Left, Nigeria Withdrawal on Right */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
-        {/* Ads Panel (7 Columns) */}
-        <div className="lg:col-span-7 bg-slate-900/40 border border-slate-850 rounded-3xl p-5 md:p-6 space-y-4">
+        {/* Ads Panel (7 Columns if Admin, 12 if Standard) */}
+        <div className={`${isAdminUser ? 'lg:col-span-7' : 'lg:col-span-12'} bg-slate-900/40 border border-slate-850 rounded-3xl p-5 md:p-6 space-y-4`}>
           <div>
             <h3 className="text-sm font-extrabold uppercase tracking-tight text-white flex items-center gap-2">
               <Play className="w-4 h-4 text-orange-500" />
@@ -806,451 +733,161 @@ export default function MonetizationLab({ user, onUpdateUser }: MonetizationProp
           </div>
         </div>
 
-          {/* Withdrawal Form (5 Columns) */}
-        <div className="lg:col-span-5 bg-slate-900/40 border border-slate-850 rounded-3xl p-5 md:p-6 space-y-4">
-          <div>
-            <h3 className="text-sm font-extrabold uppercase tracking-tight text-white flex items-center gap-2">
-              <ArrowUpRight className="w-4 h-4 text-emerald-400" />
-              On-Chain Payout Portal (USDT)
-            </h3>
-            <p className="text-xs text-slate-400 mt-1 font-sans">
-              Cryptocurrency settlement gateway via Binance Merchant Pay and TRON Network (TRC-20) route.
-            </p>
-          </div>
-
-          {!isAdminUser ? (
-            <div className="space-y-4">
-              <div className="p-5 bg-slate-950/80 border border-slate-850 rounded-2xl text-center space-y-4 shadow-xl">
-                <div className="flex justify-center">
-                  <div className="p-3 bg-red-500/10 border border-red-500/30 text-red-500 rounded-full">
-                    <Lock className="w-5 h-5 text-red-400 animate-pulse" />
-                  </div>
-                </div>
-                <div className="space-y-1.5 max-w-sm mx-auto font-sans">
-                  <h4 className="text-xs font-black uppercase tracking-wider text-red-400">🔒 Withdrawals Disabled</h4>
-                  <p className="text-[10.5px] text-slate-400 leading-relaxed">
-                    Direct withdrawals are strictly disabled for Standard Players, Vendors, and Visitors. Account balances can only be distributed by the Admin during personal giveaways. If you are participating in a giveaway, please contact the Admin personally.
-                  </p>
-                </div>
-                <div className="text-[9px] text-slate-500 font-mono uppercase tracking-wider">
-                  Platform Authorized Admin: ghostfirehub@gmail.com
-                </div>
-              </div>
-
-              {/* On-Chain Public Blockchain Explorer Verifier for Standard Users */}
-              <div className="p-4 bg-slate-950/80 border border-slate-850 rounded-2xl space-y-3 font-sans shadow-lg">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 bg-emerald-500 rounded-full animate-ping"></span>
-                    <span className="text-[10px] font-black uppercase text-emerald-400 tracking-wider font-mono">TRON Block Explorer (Tronscan)</span>
-                  </div>
-                  <span className="text-[8.5px] px-1.5 py-0.5 bg-slate-900 border border-slate-880 text-slate-400 rounded font-mono uppercase font-bold">TRC-20 TRON</span>
-                </div>
-                <p className="text-[10.5px] text-slate-400 leading-normal">
-                  Verify real-time wallet balances, smart contract interactions, and gas fees on the public on-chain ledger.
-                </p>
-                <div className="space-y-1.5">
-                  <label className="text-[8px] font-bold text-slate-500 uppercase tracking-wider block">Wallet Address to Verify</label>
-                  <div className="flex gap-1.5">
-                    <input
-                      type="text"
-                      readOnly
-                      value="TYaPAvYJGML1WyfbXAYcx3TGATMYc1bZeT"
-                      className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-[10px] font-mono text-slate-300 outline-none select-all"
-                    />
-                    <a
-                      href="https://tronscan.org/#/address/TYaPAvYJGML1WyfbXAYcx3TGATMYc1bZeT"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-3.5 py-2 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-slate-950 font-extrabold uppercase text-[9px] tracking-wider rounded-xl transition-all flex items-center justify-center cursor-pointer shadow-md shadow-orange-600/10 shrink-0"
-                    >
-                      Verify On-Chain
-                    </a>
-                  </div>
-                </div>
-                <div className="text-[9.5px] text-slate-400 border-t border-slate-900 pt-2 leading-relaxed">
-                  <p className="font-bold text-amber-500">📝 DEVELOPER SANDBOX DISCLOSURE:</p>
-                  <p>Because GhostFireHub runs in a sandboxed developer preview environment, the withdrawal engine operates high-fidelity simulations. Real USDT on-chain transfers are not debited from or credited to your live Binance wallet. To check actual balances and on-chain histories, use the public Tronscan button above.</p>
-                </div>
-              </div>
+        {/* Withdrawal Form (5 Columns) */}
+        {isAdminUser && (
+          <div className="lg:col-span-5 bg-slate-900/40 border border-slate-850 rounded-3xl p-5 md:p-6 space-y-4">
+            <div>
+              <h3 className="text-sm font-extrabold uppercase tracking-tight text-white flex items-center gap-2">
+                <ArrowUpRight className="w-4 h-4 text-emerald-400" />
+                On-Chain Payout Portal (USDT)
+              </h3>
+              <p className="text-xs text-slate-400 mt-1 font-sans">
+                Cryptocurrency settlement gateway via Binance Merchant Pay and TRON Network (TRC-20) route.
+              </p>
             </div>
-          ) : (
+
             <div className="space-y-4">
               <div className="p-3 bg-orange-600/10 border border-orange-500/20 rounded-xl text-xs text-orange-400 font-sans">
                 👑 <strong>ADMIN ACCESS UNLOCKED:</strong> You are authorized to manage and initiate payouts.
               </div>
               <form onSubmit={handleWithdrawFunds} className="space-y-3">
-              {formError && (
-                <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start gap-2 text-xs text-red-400 animate-fadeIn font-sans">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>{formError}</span>
-                </div>
-              )}
-
-              {formSuccess && (
-                <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-start gap-2 text-xs text-emerald-400 animate-fadeIn font-sans">
-                  <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>{formSuccess}</span>
-                </div>
-              )}
-
-              {/* Payout Method Selector */}
-              <div className="space-y-1.5">
-                <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Select Payout Gateway Method</label>
-                <div className="grid grid-cols-2 gap-1 p-1 bg-slate-950 border border-slate-850 rounded-2xl">
-                  <button
-                    type="button"
-                    onClick={() => setPayoutMethod('USDT')}
-                    className={`py-2 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer ${
-                      payoutMethod === 'USDT' 
-                        ? 'bg-orange-600 text-slate-950 font-black' 
-                        : 'text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    USDT TRC20
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPayoutMethod('BinancePay')}
-                    className={`py-2 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer ${
-                      payoutMethod === 'BinancePay' 
-                        ? 'bg-orange-600 text-slate-950 font-black' 
-                        : 'text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    Binance Pay
-                  </button>
-                </div>
-              </div>
-
-              {payoutMethod === 'USDT' && (
-                <div className="space-y-3 p-3 bg-slate-950/60 border border-slate-850 rounded-2xl animate-fadeIn">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-black uppercase text-slate-400">USDT Wallet Address (TRC-20 TRON Network)</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. TY2C89Hda219saJKfha90daS..."
-                      value={cryptoAddress}
-                      onChange={(e) => setCryptoAddress(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2.5 text-xs font-mono text-white outline-none focus:border-orange-500 placeholder:text-slate-700"
-                    />
+                {formError && (
+                  <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start gap-2 text-xs text-red-400 animate-fadeIn font-sans">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>{formError}</span>
                   </div>
-                  <div className="text-[9px] text-slate-400 leading-relaxed space-y-1 font-sans">
-                    <p className="font-bold text-amber-500">⚠️ IMPORTANT NETWORK DISCLOSURE:</p>
-                    <p>Only send to a TRC-20 (TRON) network address. Funds sent to other blockchain networks (ERC-20, BEP-20) will be lost forever.</p>
-                  </div>
-                  <div className="text-[9px] text-slate-500 font-mono">
-                    ⏰ Estimated Credit Time: Immediate upon Admin approval (3-5 blockchain confirmations).
-                  </div>
-                </div>
-              )}
-
-              {payoutMethod === 'BinancePay' && (
-                <div className="space-y-3 p-3 bg-slate-950/60 border border-slate-850 rounded-2xl animate-fadeIn">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-black uppercase text-slate-400">Binance Pay ID (or Account Email/Phone)</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. 8149101312 or ghostmaster@gmail.com"
-                      value={binancePayId}
-                      onChange={(e) => setBinancePayId(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2.5 text-xs font-mono text-white outline-none focus:border-orange-500 placeholder:text-slate-700"
-                    />
-                  </div>
-                  <div className="text-[9px] text-slate-400 leading-relaxed space-y-1 font-sans">
-                    <p className="font-bold text-emerald-500">⚡ BINANCE PAY INSTANT ESCROW:</p>
-                    <p>Binance Pay is a secure, borderless, and contactless user-to-user cryptocurrency payment technology. Payouts are completely gas-free and instant.</p>
-                  </div>
-                  <div className="text-[9px] text-slate-500 font-mono">
-                    ⏰ Estimated Credit Time: Instant upon approval (sent directly from merchant pool).
-                  </div>
-                </div>
-              )}
-
-              {/* Amount ($ USD) */}
-              <div className="space-y-1">
-                <div className="flex justify-between items-center">
-                  <label className="text-[10px] font-black uppercase text-slate-400">Amount to Withdraw ($ USD)</label>
-                  <span className="text-[9px] text-slate-500 font-mono">
-                    Converted automatically to USD balance
-                  </span>
-                </div>
-                <div className="relative">
-                  <span className="absolute left-3.5 top-2.5 text-xs text-slate-500 font-bold">$</span>
-                  <input
-                    type="text"
-                    placeholder="e.g. 10.00"
-                    value={withdrawalAmount}
-                    onChange={(e) => setWithdrawalAmount(e.target.value.replace(/[^0-9.]/g, ''))}
-                    className="w-full bg-slate-950 border border-slate-850 rounded-xl pl-8 pr-4 py-2.5 text-xs text-slate-200 outline-none focus:border-orange-500 placeholder:text-slate-700"
-                  />
-                </div>
-                {withdrawalAmount && !isNaN(Number(withdrawalAmount)) && (
-                  <p className="text-[10px] text-emerald-400 font-mono">
-                    Value to Receive: {Number(withdrawalAmount).toFixed(2)} USDT (Pure Crypto Settlement)
-                  </p>
                 )}
-                <p className="text-[9.5px] text-slate-500 italic font-sans leading-relaxed">
-                  Min. withdrawal: 1.00 USDT. Direct instant payout to your specified Binance Pay ID or USDT TRC-20 wallet.
-                </p>
-              </div>
 
-              <button
-                type="submit"
-                disabled={submittingWithdrawal || earningsBalance <= 0}
-                className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 text-slate-950 font-black uppercase text-xs tracking-widest rounded-xl transition-all shadow-lg shadow-emerald-600/10 flex justify-center items-center gap-1.5 cursor-pointer"
-              >
-                {submittingWithdrawal ? (
-                  <>
-                    <span className="w-3.5 h-3.5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></span>
-                    <span>Processing Payout...</span>
-                  </>
-                ) : (
-                  <>
-                    <ArrowUpRight className="w-4 h-4" />
-                    <span>Confirm & Withdraw USDT</span>
-                  </>
+                {formSuccess && (
+                  <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-start gap-2 text-xs text-emerald-400 animate-fadeIn font-sans">
+                    <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>{formSuccess}</span>
+                  </div>
                 )}
-              </button>
-            </form>
-          </div>
-          )}
-        </div>
 
-      </div>
+                {/* Payout Method Selector */}
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Select Payout Gateway Method</label>
+                  <div className="grid grid-cols-2 gap-1 p-1 bg-slate-950 border border-slate-850 rounded-2xl">
+                    <button
+                      type="button"
+                      onClick={() => setPayoutMethod('USDT')}
+                      className={`py-2 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+                        payoutMethod === 'USDT' 
+                          ? 'bg-orange-600 text-slate-950 font-black' 
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      USDT TRC20
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPayoutMethod('BinancePay')}
+                      className={`py-2 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+                        payoutMethod === 'BinancePay' 
+                          ? 'bg-orange-600 text-slate-950 font-black' 
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      Binance Pay
+                    </button>
+                  </div>
+                </div>
 
-      {/* Withdrawal Requests History */}
-      <div className="bg-slate-900/40 border border-slate-850 rounded-3xl p-5 md:p-6 space-y-4">
-        <div>
-          <h3 className="text-sm font-extrabold uppercase tracking-tight text-white">
-            Payout Request Ledger
-          </h3>
-          <p className="text-xs text-slate-400 mt-1 font-sans">
-            Audited history of your completed and pending bank payouts.
-          </p>
-        </div>
-
-        {withdrawalRequests.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {withdrawalRequests.map((req) => (
-              <div key={req.id} className="p-3.5 bg-slate-950 border border-slate-850 rounded-2xl flex flex-col justify-between gap-3">
-                <div className="flex justify-between items-start gap-2">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-black text-white font-mono">{req.id}</span>
-                      <span className={`text-[8px] font-mono uppercase px-1.5 py-0.5 rounded-md font-bold border ${
-                        req.status === 'Pending' || req.status === 'Initiated'
-                          ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' 
-                          : req.status === 'Processing'
-                          ? 'bg-sky-500/10 text-sky-400 border-sky-500/20'
-                          : req.status === 'Confirmed'
-                          ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
-                          : req.status === 'Approved' || req.status === 'Completed'
-                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                          : 'bg-red-500/10 text-red-400 border-red-500/20'
-                      }`}>
-                        {req.status === 'Completed' ? 'Successful' : req.status}
-                      </span>
+                {payoutMethod === 'USDT' && (
+                  <div className="space-y-3 p-3 bg-slate-950/60 border border-slate-850 rounded-2xl animate-fadeIn">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-slate-400">USDT Wallet Address (TRC-20 TRON Network)</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. TY2C89Hda219saJKfha90daS..."
+                        value={cryptoAddress}
+                        onChange={(e) => setCryptoAddress(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2.5 text-xs font-mono text-white outline-none focus:border-orange-500 placeholder:text-slate-700"
+                      />
                     </div>
-                    <div className="text-[10px] text-slate-400 font-sans leading-relaxed">
-                      Sent to: <span className="text-slate-300 font-semibold">{req.bankName || req.payoutMethod}</span> • A/C {req.accountNumber}
+                    <div className="text-[9px] text-slate-400 leading-relaxed space-y-1 font-sans">
+                      <p className="font-bold text-amber-500">⚠️ IMPORTANT NETWORK DISCLOSURE:</p>
+                      <p>Only send to a TRC-20 (TRON) network address. Funds sent to other blockchain networks (ERC-20, BEP-20) will be lost forever.</p>
                     </div>
                     <div className="text-[9px] text-slate-500 font-mono">
-                      Requested: {new Date(req.timestamp).toLocaleString()}
-                    </div>
-                    <div className="text-[9px] text-orange-400 font-mono flex items-center gap-1">
-                      <span>⏳ Est. Payout Time:</span>
-                      <span className="font-bold">{req.estimatedPayoutTime || '24-48 hours'}</span>
+                      ⏰ Estimated Credit Time: Immediate upon Admin approval (3-5 blockchain confirmations).
                     </div>
                   </div>
+                )}
 
-                  <div className="text-right">
-                    <span className="text-xs font-black text-emerald-400 block font-mono">
-                      {req.amount.toFixed(2)} USDT
-                    </span>
-                    <span className="text-[8.5px] text-slate-500 font-mono block">
-                      Multi-Chain Crypto
+                {payoutMethod === 'BinancePay' && (
+                  <div className="space-y-3 p-3 bg-slate-950/60 border border-slate-850 rounded-2xl animate-fadeIn">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-slate-400">Binance Pay ID (or Account Email/Phone)</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 8149101312 or ghostmaster@gmail.com"
+                        value={binancePayId}
+                        onChange={(e) => setBinancePayId(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2.5 text-xs font-mono text-white outline-none focus:border-orange-500 placeholder:text-slate-700"
+                      />
+                    </div>
+                    <div className="text-[9px] text-slate-400 leading-relaxed space-y-1 font-sans">
+                      <p className="font-bold text-emerald-500">⚡ BINANCE PAY INSTANT ESCROW:</p>
+                      <p>Binance Pay is a secure, borderless, and contactless user-to-user cryptocurrency payment technology. Payouts are completely gas-free and instant.</p>
+                    </div>
+                    <div className="text-[9px] text-slate-500 font-mono">
+                      ⏰ Estimated Credit Time: Instant upon approval (sent directly from merchant pool).
+                    </div>
+                  </div>
+                )}
+
+                {/* Amount ($ USD) */}
+                <div className="space-y-1">
+                  <div className="flex justify-between items-center">
+                    <label className="text-[10px] font-black uppercase text-slate-400">Amount to Withdraw ($ USD)</label>
+                    <span className="text-[9px] text-slate-500 font-mono">
+                      Converted automatically to USD balance
                     </span>
                   </div>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-2.5 text-xs text-slate-500 font-bold">$</span>
+                    <input
+                      type="text"
+                      placeholder="e.g. 10.00"
+                      value={withdrawalAmount}
+                      onChange={(e) => setWithdrawalAmount(e.target.value.replace(/[^0-9.]/g, ''))}
+                      className="w-full bg-slate-950 border border-slate-850 rounded-xl pl-8 pr-4 py-2.5 text-xs text-slate-200 outline-none focus:border-orange-500 placeholder:text-slate-700"
+                    />
+                  </div>
+                  {withdrawalAmount && !isNaN(Number(withdrawalAmount)) && (
+                    <p className="text-[10px] text-emerald-400 font-mono">
+                      Value to Receive: {Number(withdrawalAmount).toFixed(2)} USDT (Pure Crypto Settlement)
+                    </p>
+                  )}
+                  <p className="text-[9.5px] text-slate-500 italic font-sans leading-relaxed">
+                    Min. withdrawal: 1.00 USDT. Direct instant payout to your specified Binance Pay ID or USDT TRC-20 wallet.
+                  </p>
                 </div>
 
-                {req.payoutDetails && (
-                  <div className="p-2 bg-slate-900 border border-slate-850 rounded-xl text-[9px] font-mono text-slate-400 leading-normal">
-                    {req.payoutDetails}
-                  </div>
-                )}
-                
-                {['Pending', 'Initiated', 'Processing', 'Confirmed'].includes(req.status) ? (() => {
-                  const elapsedMs = Date.now() - new Date(req.timestamp).getTime();
-                  const totalDurationMs = 2 * 60 * 1000; // 2 minutes (120,000 ms)
-                  const progressPercent = Math.min(100, Math.floor((elapsedMs / totalDurationMs) * 100));
-                  const remainingMs = Math.max(0, totalDurationMs - elapsedMs);
-                  const remainingMins = Math.floor(remainingMs / 60000);
-                  const remainingSecs = Math.floor((remainingMs % 60000) / 1000);
-
-                  return (
-                    <div className="mt-2 space-y-2 p-3 bg-slate-900/60 border border-slate-850 rounded-xl font-sans animate-fadeIn">
-                      <div className="flex justify-between items-center text-[9px] font-mono">
-                        <span className="text-orange-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-ping"></span>
-                          Binance API Settlement Check ({progressPercent}%)
-                        </span>
-                        <span className="text-slate-400 font-semibold font-mono">
-                          {progressPercent >= 100 ? 'Finalizing Transfer' : `⏳ ${remainingMins}m ${remainingSecs}s remaining`}
-                        </span>
-                      </div>
-
-                      {/* Progress bar */}
-                      <div className="w-full h-1.5 bg-slate-950 rounded-full overflow-hidden">
-                        <div 
-                          style={{ width: `${progressPercent}%` }}
-                          className="h-full bg-gradient-to-r from-orange-500 to-emerald-500 rounded-full transition-all duration-1000"
-                        ></div>
-                      </div>
-
-                      {/* Steps details */}
-                      <div className="grid grid-cols-4 gap-1 text-[7.5px] font-mono text-center">
-                        <div className={elapsedMs >= 0 ? 'text-emerald-400 font-bold' : 'text-slate-600'}>
-                          ✓ API Call
-                        </div>
-                        <div className={elapsedMs >= 30005 ? 'text-emerald-400 font-bold' : 'text-amber-500 font-bold animate-pulse'}>
-                          {elapsedMs >= 30005 ? '✓ Audited' : '● Auditing'}
-                        </div>
-                        <div className={elapsedMs >= 60005 ? 'text-emerald-400 font-bold' : elapsedMs >= 30005 ? 'text-amber-500 font-bold animate-pulse' : 'text-slate-600'}>
-                          {elapsedMs >= 60005 ? '✓ Confirmed' : elapsedMs >= 30005 ? '● Confirming' : 'Waiting'}
-                        </div>
-                        <div className={elapsedMs >= 120005 ? 'text-emerald-400 font-bold' : elapsedMs >= 60005 ? 'text-amber-500 font-bold animate-pulse' : 'text-slate-600'}>
-                          {elapsedMs >= 120005 ? '✓ Credited' : elapsedMs >= 60005 ? '● Crediting Wallet' : 'Queued'}
-                        </div>
-                      </div>
-
-                      <p className="text-[8px] text-slate-500 leading-normal text-center italic mt-1">
-                        Securing cryptographic keys. Live outward Binance pay transfer settles automatically within 2 minutes.
-                      </p>
-
-                      <button
-                        type="button"
-                        onClick={() => handleCancelAndReverse(req.id, req.amount)}
-                        className="w-full mt-2.5 py-1.5 bg-red-950/40 hover:bg-red-900/40 text-red-400 hover:text-red-300 border border-red-900/30 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer flex justify-center items-center gap-1"
-                      >
-                        <XCircle className="w-3 h-3 text-red-400" />
-                        Cancel & Reverse Refund back to Balance
-                      </button>
-                    </div>
-                  );
-                })() : req.status === 'Approved' || req.status === 'Completed' ? (
-                  <div className="mt-1 flex items-center gap-1.5 text-[8.5px] text-emerald-400 font-mono font-bold bg-emerald-500/5 px-2 py-1 rounded-lg border border-emerald-500/10">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                    <span>Blockchain settlement finalized and instant bank routing cleared successfully!</span>
-                  </div>
-                ) : null}
-
-                {/* Dispute action button */}
-                {req.status !== 'Refunded' && (
-                  <div className="mt-2 border-t border-slate-850 pt-2 flex justify-between items-center">
-                    <span className="text-[8.5px] text-slate-500 font-mono">
-                      Didn't receive funds?
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setDisputeId(disputeId === req.id ? null : req.id)}
-                      className="px-2.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-[8.5px] font-black uppercase rounded-lg border border-amber-500/30 transition-all flex items-center gap-1 shrink-0 cursor-pointer animate-pulse"
-                    >
-                      <MessageSquare className="w-3 h-3 text-amber-400" />
-                      {disputeId === req.id ? 'Close Panel' : req.dispute ? 'Update Support Ticket' : 'Support Request'}
-                    </button>
-                  </div>
-                )}
-
-                {/* Inline Dispute Panel */}
-                {disputeId === req.id && (
-                  <div className="mt-2 p-3 bg-slate-900 border border-amber-500/20 rounded-xl space-y-2 animate-fadeIn">
-                    <div className="flex items-center gap-1.5 text-[9px] font-black uppercase text-amber-400 font-mono">
-                      <HelpCircle className="w-3 h-3" />
-                      Submit Support Request
-                    </div>
-                    
-                    <p className="text-[8.5px] text-slate-400 leading-relaxed font-sans">
-                      If you haven't received your funds within the stated <strong>24-48 hours</strong> timeframe, please upload your Reference ID or transaction screenshot below.
-                    </p>
-
-                    <div className="space-y-1">
-                      <label className="text-[8px] font-black uppercase text-slate-500 block">Describe the Issue (Optional)</label>
-                      <textarea
-                        value={disputeReason}
-                        onChange={(e) => setDisputeReason(e.target.value)}
-                        placeholder="e.g. Completed on dashboard but nothing in Binance Pay inbox since 30 minutes."
-                        className="w-full bg-slate-950 border border-slate-850 rounded-lg p-2 text-[10px] text-slate-300 placeholder:text-slate-700 outline-none focus:border-amber-500 h-12 resize-none"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[8px] font-black uppercase text-slate-500 block">Upload Statement/Tx Screenshot</label>
-                      <SecureImageUpload
-                        imageUrl={disputeProofUrl}
-                        onUploadSuccess={(url) => setDisputeProofUrl(url)}
-                        onClear={() => setDisputeProofUrl('')}
-                        label="Drag screenshot here or click to select"
-                      />
-                      {disputeProofUrl && (
-                        <div className="flex items-center gap-1 p-1 px-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-[8.5px] font-mono text-emerald-400">
-                          <Check className="w-2.5 h-2.5 shrink-0" />
-                          Screenshot attached successfully!
-                        </div>
-                      )}
-                    </div>
-
-                    <button
-                      type="button"
-                      disabled={disputeSubmitting || !disputeProofUrl}
-                      onClick={async () => {
-                        setDisputeSubmitting(true);
-                        try {
-                          const updatedRequests = withdrawalRequests.map(item => {
-                            if (item.id === req.id) {
-                              return {
-                                ...item,
-                                status: 'Disputed',
-                                payoutDetails: `⚠ Payout Disputed by user on ${new Date().toLocaleString()}: "${disputeReason || 'No comment provided'}". Proof screenshot attached. Under verification.`,
-                                dispute: {
-                                  reason: disputeReason,
-                                  proofUrl: disputeProofUrl,
-                                  timestamp: new Date().toISOString()
-                                }
-                              };
-                            }
-                            return item;
-                          });
-
-                          await handleSaveMetrics(earningsBalance, withdrawnTotal, touchVectorsLogged, updatedRequests);
-                          
-                          setFormSuccess(`✓ Dispute proof for transaction ${req.id} submitted successfully! Admin will review the attached screenshot within 2 minutes.`);
-                          setDisputeId(null);
-                          setDisputeReason('');
-                          setDisputeProofUrl('');
-                        } catch (err) {
-                          console.error(err);
-                          setFormError('Failed to submit dispute proof.');
-                        } finally {
-                          setDisputeSubmitting(false);
-                        }
-                      }}
-                      className="w-full py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 text-slate-950 font-black uppercase text-[9px] tracking-widest rounded-xl transition-all shadow-md flex justify-center items-center gap-1 cursor-pointer"
-                    >
-                      {disputeSubmitting ? 'Registering Dispute...' : 'Submit Dispute to Admin Pool'}
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="p-6 bg-slate-950/40 border border-dashed border-slate-850 rounded-2xl text-center">
-            <p className="text-xs text-slate-500 italic font-sans">
-              No withdrawal requests initiated yet. Complete telemetry vector licenses or watch ads to build your balance first!
-            </p>
+                <button
+                  type="submit"
+                  disabled={submittingWithdrawal || earningsBalance <= 0}
+                  className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 text-slate-950 font-black uppercase text-xs tracking-widest rounded-xl transition-all shadow-lg shadow-emerald-600/10 flex justify-center items-center gap-1.5 cursor-pointer"
+                >
+                  {submittingWithdrawal ? (
+                    <>
+                      <span className="w-3.5 h-3.5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></span>
+                      <span>Processing Payout...</span>
+                    </>
+                  ) : (
+                    <>
+                      <ArrowUpRight className="w-4 h-4" />
+                      <span>Confirm & Withdraw USDT</span>
+                    </>
+                  )}
+                </button>
+              </form>
+            </div>
           </div>
         )}
+
       </div>
 
     </div>

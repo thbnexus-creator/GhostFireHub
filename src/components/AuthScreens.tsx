@@ -100,10 +100,30 @@ export default function AuthScreens({ onAuthSuccess, onNavigateToRegister, onNav
       return;
     }
 
-    if (mode === 'register' && !username) {
-      setError('Please provide a unique username.');
-      setLoading(false);
-      return;
+    if (mode === 'register') {
+      if (!username) {
+        setError('Please provide a unique username.');
+        setLoading(false);
+        return;
+      }
+      if (!password) {
+        setError('Please provide a secure password.');
+        setLoading(false);
+        return;
+      }
+      if (password.length < 6) {
+        setError('Password must be at least 6 characters long.');
+        setLoading(false);
+        return;
+      }
+      const hasUppercase = /[A-Z]/.test(password);
+      const hasLowercase = /[a-z]/.test(password);
+      const hasNumber = /[0-9]/.test(password);
+      if (!hasUppercase || !hasLowercase || !hasNumber) {
+        setError('Password must contain at least one uppercase letter, one lowercase letter, and one number.');
+        setLoading(false);
+        return;
+      }
     }
 
     // Referral code is now optional; if blank, we let the backend handle default GHOST666
