@@ -1,3 +1,4 @@
+import { firebaseApi } from '../lib/firebaseApi';
 import React, { useState, useEffect } from 'react';
 import { 
   Gift, 
@@ -48,7 +49,7 @@ export default function CommunityGiveaways({ userEmail, isAdmin }: GiveawaysProp
   const loadGiveaways = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/giveaways');
+      const res = await firebaseApi.request('giveaways');
       if (res.ok) {
         const data = await res.json();
         setGiveaways(data);
@@ -90,7 +91,7 @@ export default function CommunityGiveaways({ userEmail, isAdmin }: GiveawaysProp
     end.setDate(end.getDate() + Number(durationDays));
 
     try {
-      const res = await fetch('/api/giveaways', {
+      const res = await firebaseApi.request('giveaways', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -136,7 +137,7 @@ export default function CommunityGiveaways({ userEmail, isAdmin }: GiveawaysProp
     setSuccess('');
 
     try {
-      const res = await fetch(`/api/giveaways/${giveawayId}/join`, {
+      const res = await firebaseApi.request(`giveaways/${giveawayId}/join`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: userEmail })
@@ -178,7 +179,7 @@ export default function CommunityGiveaways({ userEmail, isAdmin }: GiveawaysProp
     const chosenWinnerEmail = g.participants[randomIndex];
 
     try {
-      const res = await fetch(`/api/giveaways/${giveawayId}`, {
+      const res = await firebaseApi.request(`giveaways/${giveawayId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ winner: chosenWinnerEmail })
@@ -205,7 +206,7 @@ export default function CommunityGiveaways({ userEmail, isAdmin }: GiveawaysProp
       if (g && g.image) {
         await deleteFileFromFirebase(g.image);
       }
-      const res = await fetch(`/api/giveaways/${giveawayId}`, {
+      const res = await firebaseApi.request(`giveaways/${giveawayId}`, {
         method: 'DELETE'
       });
       if (res.ok) {
@@ -295,9 +296,10 @@ export default function CommunityGiveaways({ userEmail, isAdmin }: GiveawaysProp
       <AnimatePresence>
         {showAddForm && isAdmin && (
           <motion.form
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
+            initial={{ opacity: 0, scale: 0.98, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.98, y: -4 }}
+            transition={{ duration: 0.2 }}
             onSubmit={handleAddGiveaway}
             className="bg-slate-900/40 border border-purple-500/20 rounded-2xl p-4 space-y-4 overflow-hidden text-xs text-white"
           >

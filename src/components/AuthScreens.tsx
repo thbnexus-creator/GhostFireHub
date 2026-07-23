@@ -1,7 +1,21 @@
 import React, { useState } from 'react';
 import { Mail, Lock, User, Sparkles, ArrowRight, ShieldCheck, AlertCircle } from 'lucide-react';
 import { UserProfile } from '../types';
-import { signInWithGoogle } from '../lib/firebase';
+import { signInWithGoogle, auth } from '../lib/firebase';
+import { 
+  createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword, 
+  sendPasswordResetEmail,
+  updateProfile
+} from 'firebase/auth';
+import { 
+  getUserProfile, 
+  createUserProfile, 
+  updateUserProfile,
+  isUsernameTaken,
+  findUserByReferralCode,
+  findUserByUsername
+} from '../lib/dbService';
 
 interface AuthProps {
   onAuthSuccess: (user: UserProfile) => void;
@@ -43,24 +57,51 @@ export default function AuthScreens({ onAuthSuccess, onNavigateToRegister, onNav
         throw new Error('Could not retrieve email from Google Account.');
       }
 
-      // Call backend to authenticate / register user profile
-      const response = await fetch('/api/auth/google', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: firebaseUser.email,
-          displayName: firebaseUser.displayName || ''
-        })
-      });
+      // Check if user profile already exists in Firestore
+      let profile = await getUserProfile(firebaseUser.uid);
 
-      const data = await response.json();
-      if (response.ok) {
+      if (profile) {
+        if (profile.isBanned) {
+          setError('This user account has been suspended by the administrator.');
+          setLoadingGoogle(false);
+          return;
+        }
         setSuccess('Successfully authenticated! Initializing dashboard...');
         setTimeout(() => {
-          onAuthSuccess(data.user);
+          onAuthSuccess(profile!);
         }, 1200);
       } else {
-        setError(data.error || 'Failed to authenticate via Google.');
+        // Auto-register new Google user with a clean, unique username
+        const baseUsername = firebaseUser.displayName 
+          ? firebaseUser.displayName.replace(/[^a-zA-Z0-9]/g, '') 
+          : firebaseUser.email.split('@')[0];
+        
+        let finalUsername = baseUsername || 'Tactician';
+        let count = 1;
+
+        // Query Firestore to avoid username collisions
+        let usernameTaken = true;
+        while (usernameTaken) {
+          const taken = await isUsernameTaken(finalUsername);
+          if (!taken) {
+            usernameTaken = false;
+          } else {
+            finalUsername = `${baseUsername}${count}`;
+            count++;
+          }
+        }
+
+        // Create user profile in Firestore
+        const newProfile = await createUserProfile(firebaseUser.uid, {
+          email: firebaseUser.email,
+          username: finalUsername,
+          country
+        });
+
+        setSuccess('Google account successfully registered! Launching profile...');
+        setTimeout(() => {
+          onAuthSuccess(newProfile);
+        }, 1200);
       }
     } catch (err: any) {
       console.error('Google Sign-In Error:', err);
@@ -82,7 +123,7 @@ export default function AuthScreens({ onAuthSuccess, onNavigateToRegister, onNav
         friendlyMessage = errorMessage;
       }
       
-        setError(friendlyMessage);
+      setError(friendlyMessage);
     } finally {
       setLoadingGoogle(false);
     }
@@ -129,44 +170,137 @@ export default function AuthScreens({ onAuthSuccess, onNavigateToRegister, onNav
     // Referral code is now optional; if blank, we let the backend handle default GHOST666
     const finalReferralCode = referralCode.trim() || 'GHOST666';
 
-    const endpoint = mode === 'register' ? '/api/auth/register' : '/api/auth/login';
-    const payload = mode === 'register' ? { email: email.trim(), username, password, referralCode: finalReferralCode, country } : { email: email.trim(), password };
-
     try {
       if (mode === 'forgot') {
-        // Mock success for Forgot password
-        setTimeout(() => {
-          setSuccess('A password reset link has been dispatched to ' + email + '. Please verify your inbox.');
+        if (!email) {
+          setError('Please provide your email address.');
           setLoading(false);
-        }, 1000);
+          return;
+        }
+        await sendPasswordResetEmail(auth, email.trim());
+        setSuccess('A password reset link has been dispatched to ' + email + '. Please verify your inbox.');
+        setLoading(false);
         return;
       }
 
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const data = await response.json();
-
-      if (response.ok) {
-        if (mode === 'register') {
-          setSuccess('Registration successful! Launching profile...');
-          setTimeout(() => {
-            onAuthSuccess(data.user);
-          }, 1200);
-        } else {
-          onAuthSuccess(data.user);
+      if (mode === 'register') {
+        const cleanUsername = username.trim();
+        
+        // 1. Check username uniqueness in Firestore
+        const isTaken = await isUsernameTaken(cleanUsername);
+        if (isTaken) {
+          setError('Username already taken. Please choose a different name!');
+          setLoading(false);
+          return;
         }
+
+        let finalEmail = (email || '').toLowerCase().trim();
+        if (!finalEmail) {
+          const parsedUser = cleanUsername.toLowerCase().replace(/[^a-z0-9]/g, '');
+          finalEmail = `${parsedUser || 'ghostuser' + Math.floor(Math.random() * 10000)}@ghostfirehub.com`;
+        }
+
+        // 2. Create the user in Firebase Auth
+        const credential = await createUserWithEmailAndPassword(auth, finalEmail, password);
+        
+        // Sync display name in Firebase Auth
+        try {
+          await updateProfile(credential.user, { displayName: cleanUsername });
+        } catch (updateProfileErr) {
+          console.warn("Failed to update Firebase display name:", updateProfileErr);
+        }
+        
+        // 3. Check and award referral bonuses if applicable
+        let referringUserEmail: string | null = null;
+        if (finalReferralCode && finalReferralCode !== 'GHOST666') {
+          // Check if referral code matches an existing user's referral code
+          const refResult = await findUserByReferralCode(finalReferralCode);
+          if (refResult) {
+            referringUserEmail = refResult.data.email;
+            
+            // Award referrer +50 points and increment count
+            await updateUserProfile(refResult.id, {
+              referralCount: (refResult.data.referralCount || 0) + 1,
+              ghostPoints: (refResult.data.ghostPoints || 0) + 50
+            });
+          }
+        }
+
+        // 4. Save profile to Firestore
+        const userProfile = await createUserProfile(credential.user.uid, {
+          email: finalEmail,
+          username: cleanUsername,
+          country
+        });
+
+        setSuccess('Registration successful! Launching profile...');
+        setTimeout(() => {
+          onAuthSuccess(userProfile);
+        }, 1200);
+
       } else {
-        setError(data.error || 'Authentication failed. Please check credentials.');
+        // Mode is Login
+        let loginEmail = email.trim();
+        
+        // Handle login by username fallback
+        if (!loginEmail.includes('@')) {
+          const userData = await findUserByUsername(loginEmail);
+          if (userData) {
+            loginEmail = userData.email;
+          } else {
+            setError('No user account matches that username.');
+            setLoading(false);
+            return;
+          }
+        }
+
+        // Authenticate with Firebase Auth
+        const credential = await signInWithEmailAndPassword(auth, loginEmail, password);
+        
+        // Fetch User Profile from Firestore
+        let profile = await getUserProfile(credential.user.uid);
+        if (!profile) {
+          // Fallback if record was never created
+          profile = await createUserProfile(credential.user.uid, {
+            email: loginEmail,
+            username: loginEmail.split('@')[0],
+            country
+          });
+        }
+
+        if (profile.isBanned) {
+          setError('This account has been suspended by the administrator.');
+          setLoading(false);
+          return;
+        }
+
+        onAuthSuccess(profile);
       }
     } catch (err: any) {
-      setError('Server connection timed out. Please try again.');
+      console.error('Authentication Error:', err);
+      let friendlyMessage = 'Authentication failed. Please verify credentials.';
+      const errorCode = err.code || '';
+      const errorMessage = err.message || '';
+      
+      if (errorCode === 'auth/network-request-failed' || errorMessage.includes('network-request-failed')) {
+        friendlyMessage = 'Network connection failed. Please verify your internet connection and make sure your Firebase project is reachable.';
+      } else if (errorCode === 'auth/wrong-password' || errorCode === 'auth/user-not-found' || errorCode === 'auth/invalid-credential') {
+        friendlyMessage = 'Incorrect email or password. Please verify and try again.';
+      } else if (errorCode === 'auth/email-already-in-use') {
+        friendlyMessage = 'This email address is already associated with another account.';
+      } else if (errorCode === 'auth/weak-password') {
+        friendlyMessage = 'Password must be at least 6 characters.';
+      } else if (errorCode === 'auth/invalid-email') {
+        friendlyMessage = 'Invalid email address format.';
+      } else if (errorMessage) {
+        friendlyMessage = errorMessage;
+      }
+      setError(friendlyMessage);
     } finally {
       setLoading(false);
     }
   };
+
 
   return (
     <div className="w-full max-w-md mx-auto bg-slate-900/60 border border-slate-800 rounded-3xl p-6 lg:p-8 backdrop-blur-xl shadow-2xl relative overflow-hidden">

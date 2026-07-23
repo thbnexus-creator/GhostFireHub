@@ -1,3 +1,4 @@
+import { firebaseApi } from '../lib/firebaseApi';
 import React, { useState, useEffect } from 'react';
 import { 
   Briefcase, 
@@ -18,7 +19,9 @@ import {
   Info, 
   X,
   UserCheck,
-  ShieldCheck
+  ShieldCheck,
+  Crown,
+  ShieldAlert
 } from 'lucide-react';
 import { 
   ResponsiveContainer, 
@@ -77,6 +80,11 @@ export default function VendorDashboard({
   const [formError, setFormError] = useState('');
   const [formSuccess, setFormSuccess] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [submitStatusTarget, setSubmitStatusTarget] = useState<'Draft' | 'Submitted'>('Submitted');
+  const [submittingState, setSubmittingState] = useState('');
+  const [expandedNotesId, setExpandedNotesId] = useState<string | null>(null);
+  const [evidenceProdId, setEvidenceProdId] = useState<string | null>(null);
+  const [evidenceUrlText, setEvidenceUrlText] = useState<string>('');
 
   // Review reply state
   const [replyInputMap, setReplyInputMap] = useState<{[key: string]: string}>({});
@@ -125,7 +133,7 @@ export default function VendorDashboard({
   const fetchVendorListings = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/marketplace');
+      const res = await firebaseApi.request('marketplace');
       if (res.ok) {
         const data: MarketplaceProduct[] = await res.json();
         // Filter products owned by this vendor OR if admin show everything assigned to a vendor
@@ -188,6 +196,58 @@ export default function VendorDashboard({
     setFormError('');
     setFormSuccess('');
 
+    // Determine initial lifecycle step based on Draft vs Submitted choice
+    const startStatus = submitStatusTarget;
+    let finalStatus: any = startStatus;
+    let aiNotes = "Saved as Draft. Listing is private and not indexable.";
+    let evidenceNeeded = false;
+
+    let riskLevel: 'Low' | 'Medium' | 'High' = 'Low';
+    let riskScore = 15;
+    let aiReviewLogs: string[] = ['AI Compliance Engine initialized.'];
+
+    if (startStatus === 'Submitted') {
+      setSubmittingState('GhostFire Core AI compliance scan in progress...');
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      const lowerName = prodName.toLowerCase();
+      const lowerDesc = prodDesc.toLowerCase();
+
+      // Policy Rule 1: Cheat / Hack detection
+      if (lowerName.includes('hack') || lowerDesc.includes('hack') || 
+          lowerName.includes('cheat') || lowerDesc.includes('cheat') || 
+          lowerName.includes('aimbot') || lowerDesc.includes('aimbot')) {
+        finalStatus = 'Rejected';
+        riskLevel = 'High';
+        riskScore = 95;
+        aiNotes = 'Automatic AI Security Reject: Unauthorized third-party injection or hack signatures (hack, cheat, aimbot) detected in metadata. Under security protocols, utility exploits are permanently blacklisted.';
+        aiReviewLogs.push('FLAG: Blacklisted keyword detected in product metadata.');
+        aiReviewLogs.push('DECISION: Automatic Rejection.');
+      } 
+      // Policy Rule 2: High-value Escrow Verification
+      else if (parseFloat(prodPrice) > 100) {
+        finalStatus = 'Needs Evidence';
+        riskLevel = 'Medium';
+        riskScore = 60;
+        evidenceNeeded = true;
+        aiNotes = 'Automatic AI Compliance Alert: Premium listing ($100+) detected. Under financial security terms, listings valued over $100 require official merchant evidence to verify ownership before public indexing.';
+        aiReviewLogs.push('ALERT: High-value listing ($100+) requires merchant ownership evidence.');
+        aiReviewLogs.push('STATUS: Escalated to Needs Evidence.');
+      } 
+      // Policy Rule 3: Pass AI review -> Pending Admin confirmation
+      else {
+        finalStatus = 'Pending Admin';
+        riskLevel = 'Low';
+        riskScore = 10;
+        aiNotes = 'Automatic AI Review Passed: Textual metadata conforms to marketplace format regulations. Forwarding to Super Admin verification queue for final catalog indexing.';
+        aiReviewLogs.push('SCAN: Metadata, price, and category passed baseline safety check.');
+        aiReviewLogs.push('QUEUE: Transferred to Super Admin review queue.');
+      }
+      
+      setSubmittingState('Synchronizing with marketplace ledgers...');
+      await new Promise(resolve => setTimeout(resolve, 800));
+    }
+
     const payload = {
       name: prodName,
       category: prodCategory,
@@ -196,22 +256,30 @@ export default function VendorDashboard({
       image: prodImage || '📦',
       telegramLink: prodTelegram,
       isGiveaway: prodIsGiveaway,
+      vendorId: currentUser?.uid || userEmail,
       vendorEmail: userEmail,
-      hidden: false
+      hidden: false,
+      status: finalStatus,
+      riskLevel,
+      riskScore,
+      aiReviewNotes: aiNotes,
+      aiReviewLogs,
+      evidenceRequested: evidenceNeeded,
+      createdAt: new Date().toISOString()
     };
 
     try {
       let res;
       if (editingProduct) {
         // Edit existing listing
-        res = await fetch(`/api/marketplace/${editingProduct.id}`, {
+        res = await firebaseApi.request(`marketplace/${editingProduct.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
       } else {
         // Add new listing
-        res = await fetch('/api/marketplace', {
+        res = await firebaseApi.request('marketplace', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -219,12 +287,20 @@ export default function VendorDashboard({
       }
 
       if (res.ok) {
-        setFormSuccess(editingProduct ? 'Listing updated successfully!' : 'Listing published successfully!');
+        setFormSuccess(
+          finalStatus === 'Draft' 
+            ? 'Listing saved as private draft!' 
+            : finalStatus === 'Rejected'
+            ? 'Compliance Scan Failed! Listing saved as Rejected.'
+            : finalStatus === 'Needs Evidence'
+            ? 'Compliance Alert! Listing requires verification evidence.'
+            : 'Listing submitted! Forwarded to Super Admin queue.'
+        );
         setTimeout(() => {
           setIsModalOpen(false);
           fetchVendorListings();
           if (onRefreshMarketplace) onRefreshMarketplace();
-        }, 1200);
+        }, 1500);
       } else {
         const errData = await res.json();
         setFormError(errData.error || 'Failed to persist listing details.');
@@ -233,13 +309,14 @@ export default function VendorDashboard({
       setFormError('Network error occurred.');
     } finally {
       setSubmitting(false);
+      setSubmittingState('');
     }
   };
 
   // Toggle Hidden Status
   const handleToggleHide = async (p: MarketplaceProduct) => {
     try {
-      const res = await fetch(`/api/marketplace/${p.id}`, {
+      const res = await firebaseApi.request(`marketplace/${p.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ hidden: !p.hidden })
@@ -257,10 +334,36 @@ export default function VendorDashboard({
   const handleDeleteProduct = async (id: string) => {
     if (!confirm('Are you sure you want to permanently delete this listing?')) return;
     try {
-      const res = await fetch(`/api/marketplace/${id}`, {
+      const res = await firebaseApi.request(`marketplace/${id}`, {
         method: 'DELETE'
       });
       if (res.ok) {
+        fetchVendorListings();
+        if (onRefreshMarketplace) onRefreshMarketplace();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Submit compliance evidence
+  const handleSubmitEvidence = async (p: MarketplaceProduct, url: string) => {
+    if (!url.trim()) return;
+    try {
+      const payload = {
+        status: 'Submitted',
+        evidenceUrl: url,
+        evidenceRequested: false,
+        aiReviewNotes: 'Evidence Submitted: Vendor uploaded verification asset link. Status promoted to Submitted. Forwarding to Super Admin manually.'
+      };
+      const res = await firebaseApi.request(`marketplace/${p.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        setEvidenceProdId(null);
+        setEvidenceUrlText('');
         fetchVendorListings();
         if (onRefreshMarketplace) onRefreshMarketplace();
       }
@@ -290,6 +393,26 @@ export default function VendorDashboard({
   // Standard commission is 10%, vendors get 20% discount (commission level)
   const totalCommissionRealized = salesHistory.reduce((sum, h) => sum + h.commission, 0);
   const totalVendorBenefit = salesHistory.reduce((sum, h) => sum + h.commissionSaved, 0);
+
+  // Reputation metrics
+  const approvedCount = products.filter(p => p.status === 'Approved' || p.status === 'Published' || !p.status).length;
+  const rejectedCount = products.filter(p => p.status === 'Rejected').length;
+  const needsEvidenceCount = products.filter(p => p.status === 'Needs Evidence').length;
+  const totalProductsCount = products.length;
+  
+  // Custom reputation formulas
+  const trustScore = totalProductsCount > 0 
+    ? Math.max(10, Math.min(100, Math.round(((totalProductsCount - rejectedCount * 1.5) / totalProductsCount) * 100)))
+    : 100;
+    
+  let reputationLevel: 'Basic' | 'Silver' | 'Gold' | 'Diamond' = 'Basic';
+  if (trustScore >= 95 && approvedCount >= 5) {
+    reputationLevel = 'Diamond';
+  } else if (trustScore >= 85 && approvedCount >= 3) {
+    reputationLevel = 'Gold';
+  } else if (trustScore >= 70 && approvedCount >= 1) {
+    reputationLevel = 'Silver';
+  }
 
   // Guard access
   const isAuthorized = currentUser?.isVendor || currentUser?.role === 'Vendor' || currentUser?.role === 'Administrator' || currentUser?.role === 'Staff';
@@ -392,6 +515,52 @@ export default function VendorDashboard({
         </div>
       </div>
 
+      {/* MERCHANT INTEGRITY & TRUST SCORE CARD */}
+      <div className="bg-slate-900/40 border border-slate-850 rounded-2xl p-5 space-y-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 border-b border-slate-850/60 pb-3">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 bg-orange-500/10 border border-orange-500/20 text-orange-400 rounded-lg">
+              <ShieldCheck className="w-4 h-4 text-orange-400" />
+            </div>
+            <div>
+              <h3 className="text-xs font-black text-white uppercase tracking-wider">Merchant Reputation Suite</h3>
+              <p className="text-[9px] text-slate-500 font-mono">Real-time performance audit & integrity metrics</p>
+            </div>
+          </div>
+          <span className="text-[10px] bg-slate-950 border border-slate-850 px-2.5 py-1 rounded-lg text-slate-300 font-mono">
+            TRUST INDEX: <span className="font-bold text-emerald-400">{Math.round(trustScore)}%</span>
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="p-3 bg-slate-950 border border-slate-850/40 rounded-xl space-y-1">
+            <div className="text-[8px] text-slate-500 uppercase font-mono font-bold">Verification Grade</div>
+            <div className="text-xs font-black text-orange-400 flex items-center gap-1">
+              <Crown className="w-3.5 h-3.5 text-orange-400" /> {reputationLevel} Class
+            </div>
+            <p className="text-[8px] text-slate-600">Dynamic scaling on successful trades</p>
+          </div>
+
+          <div className="p-3 bg-slate-950 border border-slate-850/40 rounded-xl space-y-1">
+            <div className="text-[8px] text-slate-500 uppercase font-mono font-bold">Approved Public</div>
+            <div className="text-xs font-black text-emerald-400 font-mono">{approvedCount} <span className="text-slate-600 font-normal text-[10px]">items</span></div>
+            <p className="text-[8px] text-slate-600">Indexed on GhostCore global store</p>
+          </div>
+
+          <div className="p-3 bg-slate-950 border border-slate-850/40 rounded-xl space-y-1">
+            <div className="text-[8px] text-slate-500 uppercase font-mono font-bold">Policy Flagged</div>
+            <div className="text-xs font-black text-red-400 font-mono">{rejectedCount} <span className="text-slate-600 font-normal text-[10px]">items</span></div>
+            <p className="text-[8px] text-slate-600">Suspended or rejected publications</p>
+          </div>
+
+          <div className="p-3 bg-slate-950 border border-slate-850/40 rounded-xl space-y-1">
+            <div className="text-[8px] text-slate-500 uppercase font-mono font-bold">Audit Evidence Needed</div>
+            <div className="text-xs font-black text-amber-400 font-mono">{needsEvidenceCount} <span className="text-slate-600 font-normal text-[10px]">pending</span></div>
+            <p className="text-[8px] text-slate-600">Require platform compliance proof</p>
+          </div>
+        </div>
+      </div>
+
       {/* TAB NAVIGATION */}
       <div className="flex border-b border-slate-850">
         <button
@@ -459,15 +628,39 @@ export default function VendorDashboard({
                           {p.image || '⚙️'}
                         </div>
                         <div className="space-y-1">
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             <h4 className="text-xs font-extrabold text-white uppercase tracking-tight line-clamp-1">{p.name}</h4>
                             {p.isGiveaway && (
                               <span className="text-[7px] font-bold font-mono bg-purple-500/15 text-purple-400 px-1 py-0.5 rounded uppercase">GIVEAWAY</span>
                             )}
                           </div>
-                          <span className="text-[8px] bg-slate-950 border border-slate-850 text-slate-400 px-1.5 py-0.5 rounded font-mono uppercase font-bold">
-                            {p.category}
-                          </span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[8px] bg-slate-950 border border-slate-850 text-slate-400 px-1.5 py-0.5 rounded font-mono uppercase font-bold">
+                              {p.category}
+                            </span>
+                            {/* Dynamic status badges */}
+                            {(() => {
+                              switch (p.status) {
+                                case 'Draft':
+                                  return <span className="text-[7px] font-bold font-mono bg-slate-950 text-slate-500 border border-slate-850 px-1.5 py-0.5 rounded uppercase">DRAFT</span>;
+                                case 'Submitted':
+                                  return <span className="text-[7px] font-bold font-mono bg-blue-500/10 text-blue-400 border border-blue-500/20 px-1.5 py-0.5 rounded uppercase">SUBMITTED</span>;
+                                case 'AI Review':
+                                  return <span className="text-[7px] font-bold font-mono bg-purple-500/10 text-purple-400 border border-purple-500/20 px-1.5 py-0.5 rounded uppercase animate-pulse">AI REVIEW</span>;
+                                case 'Pending Admin':
+                                  return <span className="text-[7px] font-bold font-mono bg-orange-500/10 text-orange-400 border border-orange-500/20 px-1.5 py-0.5 rounded uppercase">PENDING ADMIN</span>;
+                                case 'Approved':
+                                case 'Published':
+                                  return <span className="text-[7px] font-bold font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded uppercase">APPROVED</span>;
+                                case 'Rejected':
+                                  return <span className="text-[7px] font-bold font-mono bg-red-500/10 text-red-400 border border-red-500/20 px-1.5 py-0.5 rounded uppercase">REJECTED</span>;
+                                case 'Needs Evidence':
+                                  return <span className="text-[7px] font-bold font-mono bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1.5 py-0.5 rounded uppercase">NEEDS PROOF</span>;
+                                default:
+                                  return <span className="text-[7px] font-bold font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-1.5 py-0.5 rounded uppercase">APPROVED</span>;
+                              }
+                            })()}
+                          </div>
                           <p className="text-[10.5px] text-slate-400 line-clamp-2 leading-relaxed font-sans mt-1">
                             {p.description}
                           </p>
@@ -484,7 +677,83 @@ export default function VendorDashboard({
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between pt-3 border-t border-slate-850/60">
+                    {/* AI REVIEW REPORT TOGGLE */}
+                    {p.aiReviewNotes && (
+                      <div className="space-y-1 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedNotesId(expandedNotesId === p.id ? null : p.id)}
+                          className="text-[9px] font-bold text-orange-400/80 hover:text-orange-400 uppercase tracking-wider font-mono flex items-center gap-1 cursor-pointer"
+                        >
+                          {expandedNotesId === p.id ? '▼ Hide AI Audit Log' : '▶ View AI Audit Log'}
+                        </button>
+                        
+                        {expandedNotesId === p.id && (
+                          <div className="p-3 bg-slate-950 border border-slate-850/60 rounded-xl text-[10px] text-slate-300 font-sans leading-relaxed space-y-1">
+                            <div className="font-bold text-slate-400 font-mono uppercase tracking-wider text-[8px]">Feedback Report:</div>
+                            <p className="text-slate-400">{p.aiReviewNotes}</p>
+                            {p.evidenceUrl && (
+                              <div className="text-[8px] text-slate-500 font-mono mt-1">
+                                <span className="text-emerald-400">✓</span> Proof uploaded: <a href={p.evidenceUrl} target="_blank" rel="noreferrer" className="text-orange-400 underline">{p.evidenceUrl}</a>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* PROOF SUBMISSION INTERFACE */}
+                    {p.status === 'Needs Evidence' && (
+                      <div className="p-3 bg-amber-500/5 border border-amber-500/20 rounded-xl space-y-2 mt-1">
+                        <div className="text-[9px] font-bold text-amber-400 uppercase tracking-wide flex items-center gap-1 font-mono">
+                          <ShieldAlert className="w-3.5 h-3.5" /> Verification Required
+                        </div>
+                        <p className="text-[9px] text-slate-400 leading-relaxed">
+                          Please provide a proof link (YouTube configuration video, screenshot folders, or merchant accounts proof) to satisfy AI compliance terms.
+                        </p>
+                        
+                        {evidenceProdId === p.id ? (
+                          <div className="space-y-1.5">
+                            <input
+                              type="text"
+                              value={evidenceUrlText}
+                              onChange={(e) => setEvidenceUrlText(e.target.value)}
+                              placeholder="e.g. https://youtube.com/watch?v=..."
+                              className="w-full bg-slate-950 border border-slate-850 rounded-lg px-2.5 py-1.5 text-[10px] text-white focus:outline-none focus:border-orange-500"
+                            />
+                            <div className="flex gap-2 justify-end">
+                              <button
+                                type="button"
+                                onClick={() => setEvidenceProdId(null)}
+                                className="px-2 py-1 bg-slate-900 border border-slate-850 text-slate-400 text-[9px] font-bold uppercase rounded-md cursor-pointer"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleSubmitEvidence(p, evidenceUrlText)}
+                                className="px-2 py-1 bg-gradient-to-r from-orange-600 to-amber-500 text-slate-950 text-[9px] font-black uppercase rounded-md cursor-pointer"
+                              >
+                                Submit Proof Link
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEvidenceProdId(p.id);
+                              setEvidenceUrlText('');
+                            }}
+                            className="w-full py-1.5 bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 text-[9px] font-black uppercase tracking-wider rounded-lg transition-colors cursor-pointer"
+                          >
+                            Provide Proof URL
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between pt-3 border-t border-slate-850/60 mt-1">
                       {/* Telegram indicator */}
                       <span className="text-[9px] text-slate-500 font-mono leading-none">
                         Inquiries: <span className="text-slate-300 font-bold">{p.telegramLink || 'DM via Admin'}</span>
@@ -861,22 +1130,46 @@ export default function VendorDashboard({
                 />
               </div>
 
+              {/* Submitting progress HUD */}
+              {submitting && submittingState && (
+                <div className="p-3 bg-orange-500/10 border border-orange-500/20 rounded-xl space-y-1 animate-pulse">
+                  <div className="text-[9px] font-bold text-orange-400 font-mono uppercase tracking-wider flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-orange-500 inline-block animate-ping"></span>
+                    GhostCore AI Hub
+                  </div>
+                  <p className="text-[10px] text-slate-300 font-sans leading-relaxed">{submittingState}</p>
+                </div>
+              )}
+
               {/* Action buttons */}
-              <div className="flex gap-2 pt-2">
+              <div className="flex flex-col sm:flex-row gap-2 pt-2">
                 <button
                   type="button"
+                  disabled={submitting}
                   onClick={() => setIsModalOpen(false)}
-                  className="flex-1 py-2.5 bg-slate-950 border border-slate-850 hover:bg-slate-850 text-slate-400 hover:text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+                  className="py-2 px-3 bg-slate-950 border border-slate-850 hover:bg-slate-850 text-slate-400 hover:text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer disabled:opacity-50"
                 >
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="flex-1 py-2.5 bg-gradient-to-r from-orange-600 to-amber-500 hover:brightness-110 text-slate-950 text-xs font-black uppercase tracking-widest rounded-xl transition-all cursor-pointer disabled:opacity-50"
-                >
-                  {submitting ? 'Publishing...' : editingProduct ? 'Save Changes' : 'Publish now'}
-                </button>
+                
+                <div className="flex gap-2 flex-1">
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    onClick={() => setSubmitStatusTarget('Draft')}
+                    className="flex-1 py-2 px-3 bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    Save Draft
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    onClick={() => setSubmitStatusTarget('Submitted')}
+                    className="flex-1 py-2 px-3 bg-gradient-to-r from-orange-600 to-amber-500 hover:brightness-110 text-slate-950 text-xs font-black uppercase tracking-widest rounded-xl transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    {editingProduct ? 'Submit Edit' : 'Submit Review'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

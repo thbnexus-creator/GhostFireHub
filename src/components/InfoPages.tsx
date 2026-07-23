@@ -311,9 +311,9 @@ export default function InfoPages({ page }: InfoProps) {
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
                   <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl space-y-1">
-                    <span className="text-[9px] font-mono font-bold text-orange-400 uppercase">Channel A: Cloud Run Domain Mapping</span>
+                    <span className="text-[9px] font-mono font-bold text-orange-400 uppercase">Channel A: Domain Registrar CNAME</span>
                     <p className="text-[10px] leading-normal text-slate-400">
-                      Go to the Google Cloud Run Console, select your active service, click <strong className="text-slate-300">"Manage Custom Domains"</strong>, and click "Add Mapping". Enter <strong className="text-slate-300 font-mono">www.ghostfirehub.com</strong>.
+                      Go to your domain registrar DNS dashboard, add a CNAME record pointing to your active Firebase Hosting subdomain, and let Firebase provision secure SSL certificates.
                     </p>
                   </div>
                   <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl space-y-1">

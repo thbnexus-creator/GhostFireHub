@@ -1,3 +1,4 @@
+import { firebaseApi } from './lib/firebaseApi';
 /**
  * Deterministically generates a 3-digit number based on a string input (e.g. email or username)
  */
@@ -68,7 +69,7 @@ export function formatDisplayName(username: string, email?: string): string {
 export async function trackMissionProgress(email: string | undefined, actionType: 'calibrate' | 'save_sens' | 'save_hud' | 'view_device' | 'read_community' | 'view_marketplace') {
   if (!email) return;
   try {
-    const res = await fetch('/api/user/missions/progress', {
+    const res = await firebaseApi.request('user/missions/progress', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, actionType })

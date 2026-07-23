@@ -1,3 +1,4 @@
+import { firebaseApi } from '../lib/firebaseApi';
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Sliders, 
@@ -46,7 +47,6 @@ import {
 import { Device, SensitivityProfile, Weapon, UserProfile } from '../types';
 import { BRANDS_LIST, DEVICE_MODELS_MAP, detectProcessor } from '../data/deviceModels';
 import PerformanceHeatMap from './PerformanceHeatMap';
-import SponsorAdPopup from './SponsorAdPopup';
 import { trackMissionProgress } from '../utils';
 
 interface EngineProps {
@@ -128,7 +128,7 @@ export default function RecommendationEngine({
       if (!userEmail) return;
       setLoadingHistory(true);
       try {
-        const res = await fetch(`/api/recommend/history/${encodeURIComponent(userEmail)}`);
+        const res = await firebaseApi.request(`recommend/history/${encodeURIComponent(userEmail)}`);
         if (res.ok) {
           const data = await res.json();
           setHistoryData(data || []);
@@ -193,12 +193,6 @@ export default function RecommendationEngine({
   const [presetDesc, setPresetDesc] = useState('');
   const [presetStatus, setPresetStatus] = useState('published');
 
-  // Guest share tracking states
-  const [guestShareCount, setGuestShareCount] = useState(0);
-  const [showShareModal, setShowShareModal] = useState(false);
-  const [showForcedVideoAd, setShowForcedVideoAd] = useState(false);
-  const [hasWatchedVideoAd, setHasWatchedVideoAd] = useState(false);
-
   // Quick Setup Walkthrough states
   const [showWalkthrough, setShowWalkthrough] = useState(false);
   const [walkthroughStep, setWalkthroughStep] = useState(0);
@@ -249,7 +243,7 @@ export default function RecommendationEngine({
   const fetchPresets = async () => {
     try {
       setLoadingPresets(true);
-      const res = await fetch('/api/presets');
+      const res = await firebaseApi.request('presets');
       if (res.ok) {
         const data = await res.json();
         setPresets(data || []);
@@ -358,18 +352,6 @@ export default function RecommendationEngine({
     if (e) e.preventDefault();
     if (loading) return; // Prevent duplicate clicks
 
-    // Require unregistered guest to watch a promotional ad first!
-    if (!userEmail && !bypassCheck && !hasWatchedVideoAd) {
-      setShowForcedVideoAd(true);
-      return;
-    }
-
-    // Require unregistered guest to share 1 time first!
-    if (!userEmail && !bypassCheck && guestShareCount < 1) {
-      setShowShareModal(true);
-      return;
-    }
-
     setLoading(true);
     setLoadingStep(0);
 
@@ -391,7 +373,7 @@ export default function RecommendationEngine({
 
     try {
       // Trigger backend recommendation generator
-      const response = await fetch('/api/recommend', {
+      const response = await firebaseApi.request('recommend', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -440,33 +422,6 @@ export default function RecommendationEngine({
       clearInterval(stepInterval);
       setLoading(false);
     }
-  };
-
-  const handleGuestShare = (channel: 'whatsapp' | 'telegram') => {
-    const text = 'I just calibrated my Free Fire sensitivity using GhostCore™ AI! Calibrate your phone for free at:';
-    const url = 'https://ghostfirehub.com';
-    let shareUrl = '';
-    
-    if (channel === 'whatsapp') {
-      // Must open Web WhatsApp and go to share to group
-      shareUrl = `https://web.whatsapp.com/send?text=${encodeURIComponent(text + ' ' + url)}`;
-    } else {
-      shareUrl = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`;
-    }
-    
-    window.open(shareUrl, '_blank');
-    
-    setGuestShareCount(prev => {
-      const next = Math.min(prev + 1, 1);
-      if (next >= 1) {
-        setTimeout(() => {
-          setShowShareModal(false);
-          // Trigger the actual calibration now that they shared 1 time!
-          handleGenerate(undefined, true);
-        }, 1200);
-      }
-      return next;
-    });
   };
 
   const saveCurrentToProfile = async () => {
@@ -703,7 +658,7 @@ export default function RecommendationEngine({
     const finalGameModesStr = selectedGameModes.length > 0 ? selectedGameModes.join(', ') : 'Battle Royale';
     
     try {
-      const res = await fetch('/api/presets', {
+      const res = await firebaseApi.request('presets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -845,11 +800,11 @@ export default function RecommendationEngine({
   const handlePresetFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const isEdit = !!editingPreset;
-    const url = isEdit ? `/api/presets/${editingPreset.id}` : '/api/presets';
+    const path = isEdit ? `presets/${editingPreset.id}` : 'presets';
     const method = isEdit ? 'PUT' : 'POST';
 
     try {
-      const res = await fetch(url, {
+      const res = await firebaseApi.request(path, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -906,7 +861,7 @@ export default function RecommendationEngine({
   const handleDeletePresetClick = async (id: string) => {
     if (!confirm('Are you sure you want to permanently delete this preset?')) return;
     try {
-      const res = await fetch(`/api/presets/${id}`, { method: 'DELETE' });
+      const res = await firebaseApi.request(`presets/${id}`, { method: 'DELETE' });
       if (res.ok) {
         fetchPresets();
       } else {
@@ -1486,40 +1441,40 @@ export default function RecommendationEngine({
               <div className="bg-slate-900/60 border border-slate-850 p-3.5 rounded-2xl">
                 <div className="flex justify-between items-center text-xs mb-1">
                   <span className="text-slate-400 font-semibold uppercase text-[10px] tracking-wider">General Sensitivity</span>
-                  <span className="font-mono font-bold text-white text-sm">{isPremiumUser ? output.general : '🔒 Locked'}</span>
+                  <span className="font-mono font-bold text-white text-sm">{output.general ?? 100}</span>
                 </div>
                 <div className="w-full h-1.5 bg-slate-950 rounded-full overflow-hidden">
-                  <div style={{ width: `${isPremiumUser ? (output.general / 200) * 100 : 12}%` }} className={`h-full bg-gradient-to-r ${isPremiumUser ? 'from-orange-600 to-amber-500' : 'from-slate-700 to-slate-800'} rounded-full`}></div>
+                  <div style={{ width: `${((output.general ?? 100) / 200) * 100}%` }} className="h-full bg-gradient-to-r from-orange-600 to-amber-500 rounded-full"></div>
                 </div>
               </div>
 
               <div className="bg-slate-900/60 border border-slate-850 p-3.5 rounded-2xl">
                 <div className="flex justify-between items-center text-xs mb-1">
                   <span className="text-slate-400 font-semibold uppercase text-[10px] tracking-wider">Red Dot Aim Assist</span>
-                  <span className="font-mono font-bold text-white text-sm">{isPremiumUser ? output.redDot : '🔒 Locked'}</span>
+                  <span className="font-mono font-bold text-white text-sm">{output.redDot ?? 95}</span>
                 </div>
                 <div className="w-full h-1.5 bg-slate-950 rounded-full overflow-hidden">
-                  <div style={{ width: `${isPremiumUser ? (output.redDot / 200) * 100 : 12}%` }} className={`h-full bg-gradient-to-r ${isPremiumUser ? 'from-orange-600 to-amber-500' : 'from-slate-700 to-slate-800'} rounded-full`}></div>
+                  <div style={{ width: `${((output.redDot ?? 95) / 200) * 100}%` }} className="h-full bg-gradient-to-r from-orange-600 to-amber-500 rounded-full"></div>
                 </div>
               </div>
 
               <div className="bg-slate-900/60 border border-slate-850 p-3.5 rounded-2xl">
                 <div className="flex justify-between items-center text-xs mb-1">
                   <span className="text-slate-400 font-semibold uppercase text-[10px] tracking-wider">2× Scope Sensi</span>
-                  <span className="font-mono font-bold text-white text-sm">{isPremiumUser ? output.scope2x : '🔒 Locked'}</span>
+                  <span className="font-mono font-bold text-white text-sm">{output.scope2x ?? 90}</span>
                 </div>
                 <div className="w-full h-1.5 bg-slate-950 rounded-full overflow-hidden">
-                  <div style={{ width: `${isPremiumUser ? (output.scope2x / 200) * 100 : 12}%` }} className={`h-full bg-gradient-to-r ${isPremiumUser ? 'from-orange-600 to-amber-500' : 'from-slate-700 to-slate-800'} rounded-full`}></div>
+                  <div style={{ width: `${((output.scope2x ?? 90) / 200) * 100}%` }} className="h-full bg-gradient-to-r from-orange-600 to-amber-500 rounded-full"></div>
                 </div>
               </div>
 
               <div className="bg-slate-900/60 border border-slate-850 p-3.5 rounded-2xl">
                 <div className="flex justify-between items-center text-xs mb-1">
                   <span className="text-slate-400 font-semibold uppercase text-[10px] tracking-wider">4× Scope Sensi</span>
-                  <span className="font-mono font-bold text-white text-sm">{isPremiumUser ? output.scope4x : '🔒 Locked'}</span>
+                  <span className="font-mono font-bold text-white text-sm">{output.scope4x ?? 85}</span>
                 </div>
                 <div className="w-full h-1.5 bg-slate-950 rounded-full overflow-hidden">
-                  <div style={{ width: `${isPremiumUser ? (output.scope4x / 200) * 100 : 12}%` }} className={`h-full bg-gradient-to-r ${isPremiumUser ? 'from-orange-600 to-amber-500' : 'from-slate-700 to-slate-800'} rounded-full`}></div>
+                  <div style={{ width: `${((output.scope4x ?? 85) / 200) * 100}%` }} className="h-full bg-gradient-to-r from-orange-600 to-amber-500 rounded-full"></div>
                 </div>
               </div>
 
@@ -1528,51 +1483,41 @@ export default function RecommendationEngine({
                   <span className="text-slate-400 font-semibold uppercase text-[10px] tracking-wider flex items-center gap-1">
                     <Crosshair className="w-3.5 h-3.5 text-red-500" /> Sniper Scope Calibration
                   </span>
-                  <span className="font-mono font-bold text-white text-sm">{isPremiumUser ? output.sniper : '🔒 Locked'}</span>
+                  <span className="font-mono font-bold text-white text-sm">{output.sniper ?? 55}</span>
                 </div>
                 <div className="w-full h-1.5 bg-slate-950 rounded-full overflow-hidden">
-                  <div style={{ width: `${isPremiumUser ? (output.sniper / 200) * 100 : 12}%` }} className={`h-full bg-gradient-to-r ${isPremiumUser ? 'from-red-600 to-orange-500' : 'from-slate-700 to-slate-800'} rounded-full`}></div>
+                  <div style={{ width: `${((output.sniper ?? 55) / 200) * 100}%` }} className="h-full bg-gradient-to-r from-red-600 to-orange-500 rounded-full"></div>
                 </div>
               </div>
 
               <div className="bg-slate-900/60 border border-slate-850 p-3.5 rounded-2xl col-span-2">
                 <div className="flex justify-between items-center text-xs mb-1">
                   <span className="text-slate-400 font-semibold uppercase text-[10px] tracking-wider">Free Look (360° Cam)</span>
-                  <span className="font-mono font-bold text-white text-sm">{isPremiumUser ? output.freeLook : '🔒 Locked'}</span>
+                  <span className="font-mono font-bold text-white text-sm">{output.freeLook ?? 75}</span>
                 </div>
                 <div className="w-full h-1.5 bg-slate-950 rounded-full overflow-hidden">
-                  <div style={{ width: `${isPremiumUser ? (output.freeLook / 200) * 100 : 12}%` }} className={`h-full bg-gradient-to-r ${isPremiumUser ? 'from-orange-600 to-amber-500' : 'from-slate-700 to-slate-800'} rounded-full`}></div>
+                  <div style={{ width: `${((output.freeLook ?? 75) / 200) * 100}%` }} className="h-full bg-gradient-to-r from-orange-600 to-amber-500 rounded-full"></div>
                 </div>
               </div>
 
-              {!isPremiumUser && (
-                <div className="bg-gradient-to-br from-slate-950 via-amber-950/20 to-slate-950 border border-amber-500/20 rounded-2xl p-5 text-center space-y-4 shadow-xl col-span-2 mt-2">
-                  <div className="flex justify-center">
-                    <div className="p-3 bg-amber-500/10 border border-amber-500/30 text-amber-500 rounded-full animate-pulse">
-                      <Crown className="w-6 h-6 fill-amber-500/20 text-amber-400" />
-                    </div>
+              {/* Tactical Recommendations Cards */}
+              {output.recommendations && (
+                <div className="col-span-2 grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-slate-800/60">
+                  <div className="bg-slate-950/80 border border-slate-850 p-2.5 rounded-xl">
+                    <span className="text-[9px] text-slate-500 uppercase font-mono block">Fire Button Size</span>
+                    <span className="text-xs font-bold text-orange-400 font-mono mt-0.5 block">{output.recommendations.fireButtonSize}</span>
                   </div>
-                  <div className="space-y-1.5 max-w-sm mx-auto">
-                    <h4 className="text-xs font-black uppercase tracking-wider text-amber-400">💎 Diamond Champion License Required</h4>
-                    <p className="text-[10px] text-slate-400 leading-normal font-sans">
-                      You are running on a Free calibrator license. To unlock precision micro-stutter tracking, thermal diagnostics, and premium calibration matrices, upgrade to the elite Diamond Champion status.
-                    </p>
+                  <div className="bg-slate-950/80 border border-slate-850 p-2.5 rounded-xl">
+                    <span className="text-[9px] text-slate-500 uppercase font-mono block">Recommended DPI</span>
+                    <span className="text-xs font-bold text-amber-400 font-mono mt-0.5 block">{output.recommendations.dpiSetting}</span>
                   </div>
-                  <div className="text-[9px] text-slate-500 font-mono uppercase tracking-wider">
-                    Contact our Administrator directly on WhatsApp / Telegram for manual activation!
+                  <div className="bg-slate-950/80 border border-slate-850 p-2.5 rounded-xl">
+                    <span className="text-[9px] text-slate-500 uppercase font-mono block">Graphics Preset</span>
+                    <span className="text-xs font-bold text-emerald-400 font-mono mt-0.5 block">{output.recommendations.graphicPreset}</span>
                   </div>
-                  <div className="flex justify-center">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const contactMsg = "Hello GhostFireHub Admin! I would like to upgrade my account to Diamond Champion membership subscription level. My email is: " + (currentUser?.email || 'guest@gmail.com');
-                        const url = "https://wa.me/2349015112108?text=" + encodeURIComponent(contactMsg);
-                        window.open(url, '_blank');
-                      }}
-                      className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-[9px] uppercase tracking-widest rounded-xl transition-all flex items-center gap-1 cursor-pointer"
-                    >
-                      <span>💬 Contact Admin to Upgrade</span>
-                    </button>
+                  <div className="bg-slate-950/80 border border-slate-850 p-2.5 rounded-xl">
+                    <span className="text-[9px] text-slate-500 uppercase font-mono block">Drag Technique</span>
+                    <span className="text-xs font-bold text-cyan-400 font-mono mt-0.5 block">{output.recommendations.dragTechnique}</span>
                   </div>
                 </div>
               )}
@@ -1697,70 +1642,58 @@ export default function RecommendationEngine({
             </div>
 
             {/* Smart Diagnostics explanation */}
-            {isPremiumUser ? (
-              <div className="bg-slate-950/80 border border-slate-850 rounded-2xl p-4 flex flex-col gap-2">
-                <span className="text-[10px] text-orange-500 uppercase font-black tracking-wider flex items-center gap-1.5">
-                  <Cpu className="w-3.5 h-3.5 animate-pulse" />
-                  AI-Powered Diagnostic Analysis
-                </span>
-                <div className="text-xs text-slate-300 font-sans leading-relaxed whitespace-pre-wrap">
-                  {output.explanation}
-                </div>
-                <p className="text-[10px] text-slate-500 border-t border-slate-900 pt-2 mt-1">
-                  This sensitivity profile was generated based on your device specifications, selected weapons, game modes, and play style using the GhostCore™ optimization engine.
-                </p>
+            <div className="bg-slate-950/80 border border-slate-850 rounded-2xl p-4 flex flex-col gap-2">
+              <span className="text-[10px] text-orange-500 uppercase font-black tracking-wider flex items-center gap-1.5">
+                <Cpu className="w-3.5 h-3.5 animate-pulse" />
+                AI-Powered Diagnostic Analysis
+              </span>
+              <div className="text-xs text-slate-300 font-sans leading-relaxed whitespace-pre-wrap">
+                {output.explanation}
               </div>
-            ) : (
-              <div className="bg-slate-950/40 border border-slate-900/60 rounded-2xl p-4 text-center text-[11px] text-slate-500 italic">
-                🔒 AI Diagnostic Analysis report is locked. Upgrade to Diamond Champion to read.
-              </div>
-            )}
+              <p className="text-[10px] text-slate-500 border-t border-slate-900 pt-2 mt-1">
+                This sensitivity profile was generated based on your device specifications, selected weapons, game modes, and play style using the GhostCore™ optimization engine.
+              </p>
+            </div>
 
             {/* Save Buttons & Trigger */}
-            {isPremiumUser ? (
-              <div className="flex flex-col gap-3 mt-2">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {userEmail ? (
-                    <button
-                      type="button"
-                      onClick={saveCurrentToProfile}
-                      className="py-3 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-xs font-semibold uppercase tracking-wider rounded-xl text-slate-200 flex items-center justify-center gap-2 transition-all cursor-pointer"
-                    >
-                      {saved ? <Check className="w-4 h-4 text-emerald-400" /> : <Save className="w-4 h-4" />}
-                      <span>{saved ? 'Recorded to Profile' : 'Record to Profile'}</span>
-                    </button>
-                  ) : (
-                    <div className="text-center text-[11px] text-slate-500 bg-slate-950/40 p-3 rounded-xl border border-slate-900 leading-relaxed flex items-center justify-center">
-                      ⚠️ Log in to save to Profile.
-                    </div>
-                  )}
-
+            <div className="flex flex-col gap-3 mt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {userEmail ? (
                   <button
                     type="button"
-                    onClick={exportPDFReport}
-                    className="py-3 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-slate-950 hover:text-black text-xs font-black uppercase tracking-wider rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg shadow-orange-500/10"
+                    onClick={saveCurrentToProfile}
+                    className="py-3 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-xs font-semibold uppercase tracking-wider rounded-xl text-slate-200 flex items-center justify-center gap-2 transition-all cursor-pointer"
                   >
-                    <Download className="w-4 h-4" />
-                    <span>Export PDF Report</span>
+                    {saved ? <Check className="w-4 h-4 text-emerald-400" /> : <Save className="w-4 h-4" />}
+                    <span>{saved ? 'Recorded to Profile' : 'Record to Profile'}</span>
                   </button>
-                </div>
-
-                {isPlatformAdmin && (
-                  <button
-                    type="button"
-                    onClick={saveGeneratedAsPreset}
-                    className="py-3 w-full bg-slate-900 hover:bg-slate-800 border border-orange-500/30 text-orange-400 text-xs font-bold uppercase tracking-wider rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>Publish as Preset</span>
-                  </button>
+                ) : (
+                  <div className="text-center text-[11px] text-slate-500 bg-slate-950/40 p-3 rounded-xl border border-slate-900 leading-relaxed flex items-center justify-center">
+                    ⚠️ Log in to save to Profile.
+                  </div>
                 )}
+
+                <button
+                  type="button"
+                  onClick={exportPDFReport}
+                  className="py-3 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-slate-950 hover:text-black text-xs font-black uppercase tracking-wider rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg shadow-orange-500/10"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Export PDF Report</span>
+                </button>
               </div>
-            ) : (
-              <div className="bg-slate-950/40 border border-slate-900/60 rounded-2xl p-4 text-center text-[11px] text-slate-500 italic">
-                🔒 Saving and PDF exporting is restricted to Diamond Champion members.
-              </div>
-            )}
+
+              {isPlatformAdmin && (
+                <button
+                  type="button"
+                  onClick={saveGeneratedAsPreset}
+                  className="py-3 w-full bg-slate-900 hover:bg-slate-800 border border-orange-500/30 text-orange-400 text-xs font-bold uppercase tracking-wider rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Publish as Preset</span>
+                </button>
+              )}
+            </div>
 
             {/* Absolute Objective Disclaimer */}
             <div className="p-3 bg-slate-950 border border-slate-850/80 rounded-xl text-[10px] text-slate-500 flex items-start gap-2 leading-relaxed">
@@ -2129,91 +2062,6 @@ export default function RecommendationEngine({
       </section>
       
       </div>
-
-      {/* Guest Forced Video Ad */}
-      {showForcedVideoAd && (
-        <SponsorAdPopup 
-          currentUser={currentUser}
-          onAdClose={() => {
-            setHasWatchedVideoAd(true);
-            setShowForcedVideoAd(false);
-            // Auto generate after watching
-            handleGenerate(undefined, true);
-          }}
-        />
-      )}
-
-      {/* Guest Share to Complete modal */}
-      {showShareModal && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl relative space-y-5">
-            
-            <button 
-              onClick={() => setShowShareModal(false)}
-              className="absolute top-4 right-4 p-1.5 rounded-lg bg-slate-950 border border-slate-850 text-slate-500 hover:text-slate-300 transition-colors cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-
-            <div className="text-center space-y-2">
-              <div className="w-12 h-12 bg-orange-500/10 border border-orange-500/20 text-orange-400 rounded-full flex items-center justify-center mx-auto mb-2 animate-bounce">
-                <Crown className="w-6 h-6 fill-current" />
-              </div>
-              <h4 className="text-sm font-black text-white uppercase tracking-wider">Share to Complete Calibration</h4>
-              <p className="text-[11px] text-slate-400 leading-relaxed max-w-xs mx-auto">
-                As an unregistered guest player, you must share our high-precision sensitivity simulator with WhatsApp or Telegram groups to complete hardware matrix calibration.
-              </p>
-            </div>
-
-            {/* Sharing verification progress */}
-            <div className="space-y-2 p-4 bg-slate-950 border border-slate-850 rounded-2xl">
-              <div className="flex justify-between items-center text-[10px] font-mono text-slate-400">
-                <span>Calibration Progress</span>
-                <span className="font-bold text-orange-400">{guestShareCount >= 1 ? 100 : 0}% verified</span>
-              </div>
-              <div className="w-full h-2.5 bg-slate-900 border border-slate-850 rounded-full overflow-hidden">
-                <div 
-                  style={{ width: `${guestShareCount >= 1 ? 100 : 0}%` }}
-                  className="h-full bg-gradient-to-r from-orange-500 to-amber-500 rounded-full transition-all duration-300"
-                ></div>
-              </div>
-              <p className="text-[9px] text-slate-500 text-center italic">
-                {guestShareCount < 1 
-                  ? `Share to WhatsApp Web or Telegram groups to complete`
-                  : 'Calibration unlocked! Launching simulator...'}
-              </p>
-            </div>
-
-            {/* Share launchers */}
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => handleGuestShare('whatsapp')}
-                className="py-3 px-4 bg-slate-950 hover:bg-slate-900 border border-emerald-500/20 text-emerald-400 hover:text-emerald-300 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-              >
-                <MessageCircle className="w-4 h-4 fill-current shrink-0" />
-                <span>WhatsApp Group</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleGuestShare('telegram')}
-                className="py-3 px-4 bg-slate-950 hover:bg-slate-900 border border-indigo-500/20 text-indigo-400 hover:text-indigo-300 rounded-xl text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-              >
-                <Send className="w-4 h-4 fill-current shrink-0" />
-                <span>Telegram Group</span>
-              </button>
-            </div>
-
-            <div className="text-center">
-              <p className="text-[9px] text-slate-500">
-                Tip: Creating a free account bypasses guest sharing checks and unlocks standard personalized calibrations.
-              </p>
-            </div>
-
-          </div>
-        </div>
-      )}
 
       {/* Quick Setup Walkthrough Modal */}
       {showWalkthrough && (

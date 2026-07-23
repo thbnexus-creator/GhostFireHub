@@ -12,10 +12,6 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isEmailVerified() {
-      return isSignedIn() && request.auth.token.email_verified == true;
-    }
-
     function isAdmin() {
       return isSignedIn() && (
         request.auth.token.email == 'ghostfirehub@gmail.com' ||
@@ -23,108 +19,94 @@ service cloud.firestore {
       );
     }
 
-    function isOwner(email) {
-      return isSignedIn() && request.auth.token.email.toLowerCase() == email.toLowerCase();
-    }
-
-    function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-\\+\\.\\@]+$');
-    }
-
-    function incoming() {
-      return request.resource.data;
-    }
-
-    function existing() {
-      return resource.data;
-    }
-
-    // --- Entity Validations ---
-    function isValidUser(data) {
-      return data.email is string && data.email.size() <= 128 &&
-             data.username is string && data.username.size() <= 50;
-    }
-
-    function isValidDevice(data) {
-      return data.id is string && data.id.size() <= 64 &&
-             data.brand is string && data.brand.size() <= 64 &&
-             data.model is string && data.model.size() <= 64;
-    }
-
-    function isValidWeapon(data) {
-      return data.id is string && data.id.size() <= 64 &&
-             data.name is string && data.name.size() <= 64 &&
-             data.category is string && data.category.size() <= 64;
-    }
-
-    function isValidMarketplaceProduct(data) {
-      return data.id is string && data.id.size() <= 64 &&
-             data.name is string && data.name.size() <= 128 &&
-             data.price is number;
-    }
-
-    function isValidCommunityPost(data) {
-      return data.id is string && data.id.size() <= 64 &&
-             data.title is string && data.title.size() <= 128 &&
-             data.content is string && data.content.size() <= 5000;
-    }
-
-    function isValidNotification(data) {
-      return data.id is string && data.id.size() <= 64 &&
-             data.title is string && data.title.size() <= 128 &&
-             data.message is string && data.message.size() <= 1024;
-    }
-
     // --- Collections ---
 
-    // 1. Users
-    match /users/{email} {
-      allow read: if isSignedIn();
-      allow create, update: if (isAdmin() || isOwner(email)) && isValidUser(incoming());
+    // 1. Settings (Global configuration, global theme, ads, marketplace rules)
+    match /settings/{doc} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    // 2. Users (Authenticated profile management)
+    match /users/{uid} {
+      allow read: if true;
+      allow create, update: if isSignedIn();
       allow delete: if isAdmin();
     }
 
-    // 2. Devices
+    // 3. Devices
     match /devices/{id} {
       allow read: if true;
-      allow write: if isAdmin() && isValidDevice(incoming());
+      allow write: if isAdmin();
     }
 
-    // 3. Weapons
+    // 4. Weapons
     match /weapons/{id} {
       allow read: if true;
-      allow write: if isAdmin() && isValidWeapon(incoming());
+      allow write: if isAdmin();
     }
 
-    // 4. Marketplace Products
-    match /marketplaceProducts/{id} {
+    // 5. Marketplace Products
+    match /marketplace/{id} {
       allow read: if true;
-      allow write: if isAdmin() && isValidMarketplaceProduct(incoming());
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin() || (
+        isSignedIn() && resource.data.vendorEmail == request.auth.token.email
+      );
     }
 
-    // 5. Community Posts
+    // 6. Community Posts
     match /communityPosts/{id} {
       allow read: if true;
-      allow create: if isSignedIn() && isValidCommunityPost(incoming());
-      allow update: if (isAdmin() || (isSignedIn() && existing().author == request.auth.token.email)) && isValidCommunityPost(incoming());
-      allow delete: if isAdmin() || (isSignedIn() && existing().author == request.auth.token.email);
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin() || (isSignedIn() && resource.data.authorEmail == request.auth.token.email);
     }
 
-    // 6. HUD Layouts
-    match /hudLayouts/{email} {
-      allow read: if isSignedIn();
-      allow write: if (isAdmin() || isOwner(email));
+    // 7. HUD Layouts
+    match /hudLayouts/{cleanedEmail} {
+      allow read, write: if isSignedIn();
     }
 
-    // 7. Admin Activity Logs
+    // 8. Admin Activity Logs
     match /adminActivityLogs/{id} {
       allow read, write: if isAdmin();
     }
 
-    // 8. Notifications
+    // 9. Notifications
     match /notifications/{id} {
-      allow read: if isSignedIn() && (existing().targetEmail == null || existing().targetEmail.toLowerCase() == request.auth.token.email.toLowerCase());
-      allow write: if isAdmin() && isValidNotification(incoming());
+      allow read, write: if isSignedIn();
+    }
+
+    // 10. Presets
+    match /presets/{id} {
+      allow read: if true;
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin() || (isSignedIn() && resource.data.authorEmail == request.auth.token.email);
+    }
+
+    // 11. Giveaways
+    match /giveaways/{id} {
+      allow read: if true;
+      allow update: if isSignedIn();
+      allow create, delete: if isAdmin();
+    }
+
+    // 12. Vendor Tokens
+    match /vendorTokens/{token} {
+      allow read: if isSignedIn();
+      allow update: if isSignedIn();
+      allow create, delete: if isAdmin();
+    }
+
+    // 13. Vendor Applications
+    match /vendorApplications/{uid} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // 14. Support Feedback / Issues
+    match /feedback/{id} {
+      allow read, write: if isSignedIn();
     }
   }
 }

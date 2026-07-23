@@ -1,3 +1,4 @@
+import { firebaseApi } from '../lib/firebaseApi';
 import React, { useState, useEffect } from 'react';
 import { 
   User, 
@@ -27,13 +28,12 @@ import {
   Github,
   Coins
 } from 'lucide-react';
-import { UserProfile, SensitivityProfile, HUDLayout, Weapon, Device, MarketplaceProduct } from '../types';
+import { UserProfile, SensitivityProfile, HUDLayout, Weapon, Device, MarketplaceProduct, THEME_PRESETS } from '../types';
 import { formatDisplayName, maskEmail } from '../utils';
 import DailyStreakTracker from './DailyStreakTracker';
 import VendorApplicationForm from './VendorApplicationForm';
 import VendorDashboard from './VendorDashboard';
 import WeaponsDB from './WeaponsDB';
-import MonetizationLab from './MonetizationLab';
 
 interface DashProps {
   user: UserProfile;
@@ -54,7 +54,7 @@ export default function DashboardView({
   onSelectWeapon,
   onRefreshWeapons
 }: DashProps) {
-  const [activeTab, setActiveTab] = useState<'History' | 'HUDs' | 'Settings' | 'Notifications' | 'Bookmarks' | 'Missions' | 'Weapons' | 'Monetization'>('History');
+  const [activeTab, setActiveTab] = useState<'History' | 'HUDs' | 'Settings' | 'Notifications' | 'Bookmarks' | 'Missions' | 'Weapons'>('History');
   const [sensitivityHistory, setSensitivityHistory] = useState<SensitivityProfile[]>([]);
   const [hudLayouts, setHudLayouts] = useState<HUDLayout[]>([]);
   const [allProducts, setAllProducts] = useState<MarketplaceProduct[]>([]);
@@ -79,7 +79,7 @@ export default function DashboardView({
   const handleModalCountrySubmit = async () => {
     setModalSubmitting(true);
     try {
-      const res = await fetch('/api/auth/update', {
+      const res = await firebaseApi.request('auth/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -104,7 +104,7 @@ export default function DashboardView({
 
   const handleClaimReward = async (missionId: string) => {
     try {
-      const res = await fetch('/api/user/missions/claim', {
+      const res = await firebaseApi.request('user/missions/claim', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: user.email, missionId })
@@ -115,7 +115,7 @@ export default function DashboardView({
           onUpdateUser(data.user);
         }
         // Refresh missions list
-        const missRes = await fetch(`/api/user/${encodeURIComponent(user.email)}/missions`);
+        const missRes = await firebaseApi.request(`user/${encodeURIComponent(user.email)}/missions`);
         if (missRes.ok) {
           const missData = await missRes.json();
           if (Array.isArray(missData)) {
@@ -183,29 +183,31 @@ export default function DashboardView({
     }
   }, [user]);
 
-  const handleSaveTheme = async (primary: string, secondary: string) => {
+  const handleSaveTheme = async (primary: string, secondary: string, themeName?: string) => {
     setSettingsSuccess('');
     setSettingsError('');
     try {
-      const res = await fetch('/api/auth/update', {
+      const selectedTheme = themeName || (THEME_PRESETS.find(p => p.primary.toLowerCase() === primary.toLowerCase() && p.secondary.toLowerCase() === secondary.toLowerCase())?.id || 'Custom');
+      const res = await firebaseApi.request('auth/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: user.email,
+          selectedTheme,
           themePrimary: primary,
           themeSecondary: secondary
         })
       });
       const data = await res.json();
       if (res.ok) {
-        setSettingsSuccess('Custom theme applied successfully!');
+        setSettingsSuccess(`Theme (${selectedTheme}) applied successfully!`);
         onUpdateUser(data.user);
         
         // Dispatch custom event to notify App.tsx
         const event = new CustomEvent('user-profile-updated', { detail: data.user });
         window.dispatchEvent(event);
       } else {
-        setSettingsError(data.error || 'Failed to apply custom theme.');
+        setSettingsError(data.error || 'Failed to apply theme.');
       }
     } catch (err) {
       setSettingsError('Connection failed.');
@@ -216,18 +218,19 @@ export default function DashboardView({
     setSettingsSuccess('');
     setSettingsError('');
     try {
-      const res = await fetch('/api/auth/update', {
+      const res = await firebaseApi.request('auth/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: user.email,
+          selectedTheme: 'Default',
           themePrimary: '',
           themeSecondary: ''
         })
       });
       const data = await res.json();
       if (res.ok) {
-        setSettingsSuccess('Theme reset to default successfully!');
+        setSettingsSuccess('Theme reset to default global theme successfully!');
         setThemePrimary('#f97316');
         setThemeSecondary('#f59e0b');
         onUpdateUser(data.user);
@@ -259,7 +262,7 @@ export default function DashboardView({
       return;
     }
     try {
-      const res = await fetch('/api/auth/update', {
+      const res = await firebaseApi.request('auth/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -295,7 +298,7 @@ export default function DashboardView({
     }
     setActivatingVendor(true);
     try {
-      const res = await fetch('/api/user/activate-vendor-token', {
+      const res = await firebaseApi.request('user/activate-vendor-token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -326,21 +329,21 @@ export default function DashboardView({
     setLoading(true);
     try {
       // Load saved sensitivity configs
-      const sensRes = await fetch(`/api/recommend/history/${encodeURIComponent(user.email)}`);
+      const sensRes = await firebaseApi.request(`recommend/history/${encodeURIComponent(user.email)}`);
       const sensData = await sensRes.json();
       if (Array.isArray(sensData)) {
         setSensitivityHistory(sensData);
       }
 
       // Load saved HUD templates
-      const hudRes = await fetch(`/api/hud/list/${encodeURIComponent(user.email)}`);
+      const hudRes = await firebaseApi.request(`hud/list/${encodeURIComponent(user.email)}`);
       const hudData = await hudRes.json();
       if (Array.isArray(hudData)) {
         setHudLayouts(hudData);
       }
 
       // Load products for bookmark matching
-      const prodRes = await fetch('/api/marketplace');
+      const prodRes = await firebaseApi.request('marketplace');
       if (prodRes.ok) {
         const prodData = await prodRes.json();
         if (Array.isArray(prodData)) {
@@ -349,7 +352,7 @@ export default function DashboardView({
       }
 
       // Load notifications
-      const notifRes = await fetch(`/api/notifications?email=${encodeURIComponent(user.email)}`);
+      const notifRes = await firebaseApi.request(`notifications?email=${encodeURIComponent(user.email)}`);
       if (notifRes.ok) {
         const notifData = await notifRes.json();
         if (Array.isArray(notifData)) {
@@ -359,7 +362,7 @@ export default function DashboardView({
 
       // Load daily missions
       setMissionsLoading(true);
-      const missRes = await fetch(`/api/user/${encodeURIComponent(user.email)}/missions`);
+      const missRes = await firebaseApi.request(`user/${encodeURIComponent(user.email)}/missions`);
       if (missRes.ok) {
         const missData = await missRes.json();
         if (Array.isArray(missData)) {
@@ -376,7 +379,7 @@ export default function DashboardView({
 
   const handleMarkAsRead = async (id: string) => {
     try {
-      const res = await fetch('/api/notifications/read', {
+      const res = await firebaseApi.request('notifications/read', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id })
@@ -399,7 +402,7 @@ export default function DashboardView({
     setSettingsError('');
 
     try {
-      const res = await fetch('/api/auth/update', {
+      const res = await firebaseApi.request('auth/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -642,19 +645,7 @@ export default function DashboardView({
             </button>
           )}
 
-          {isAdmin && (
-            <button
-              onClick={() => setActiveTab('Monetization')}
-              className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold uppercase tracking-wider text-left flex items-center justify-between transition-all ${activeTab === 'Monetization' ? 'bg-orange-500 text-slate-950 shadow' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/40'}`}
-            >
-              <span className="flex items-center gap-2">
-                <Coins className="w-4 h-4 text-orange-400" /> Monetization & Ads
-              </span>
-              <span className="text-[9px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded font-bold font-mono">
-                ₦{(user.earningsBalance ?? 0) > 0 ? Math.round((user.earningsBalance ?? 0) * 1500).toLocaleString() : 'EARN'}
-              </span>
-            </button>
-          )}
+
 
           <button
             onClick={() => setActiveTab('Weapons')}
@@ -1076,6 +1067,7 @@ export default function DashboardView({
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                     {[
                       { name: 'Default Tactical', primary: '#f97316', secondary: '#f59e0b', label: 'Orange / Amber' },
+                      { name: 'Premium Black Gold', primary: '#D4AF37', secondary: '#F5E6A9', label: 'Premium Gold' },
                       { name: 'Cyberpunk Neon', primary: '#ec4899', secondary: '#06b6d4', label: 'Hot Pink / Cyan' },
                       { name: 'Emerald Matrix', primary: '#10b981', secondary: '#84cc16', label: 'Green / Lime' },
                       { name: 'Deep Blue Tech', primary: '#3b82f6', secondary: '#a855f7', label: 'Neon Blue / Purple' },
@@ -1341,7 +1333,7 @@ export default function DashboardView({
                       
                       // Auto-save to provide a seamless user experience
                       try {
-                        const res = await fetch('/api/auth/update', {
+                        const res = await firebaseApi.request('auth/update', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({
@@ -1696,15 +1688,6 @@ export default function DashboardView({
                 userEmail={user.email}
                 onSelectWeapon={onSelectWeapon}
                 onRefreshWeapons={onRefreshWeapons}
-              />
-            </div>
-          )}
-
-          {activeTab === 'Monetization' && (
-            <div className="space-y-6 animate-fadeIn">
-              <MonetizationLab 
-                user={user}
-                onUpdateUser={onUpdateUser}
               />
             </div>
           )}

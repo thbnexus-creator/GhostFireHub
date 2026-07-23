@@ -82,6 +82,13 @@ export interface MarketplaceProduct {
   isGiveaway?: boolean;
   hidden?: boolean;
   vendorEmail?: string;
+  status?: 'Draft' | 'Submitted' | 'AI Review' | 'Pending Admin' | 'Approved' | 'Published' | 'Rejected' | 'Needs Evidence';
+  aiReviewNotes?: string;
+  adminNotes?: string;
+  evidenceRequested?: boolean;
+  evidenceNotes?: string;
+  evidenceUrl?: string;
+  createdAt?: string;
 }
 
 export interface CommunityPost {
@@ -119,6 +126,7 @@ export interface Notification {
 }
 
 export interface UserProfile {
+  uid?: string;
   email: string;
   username: string;
   favoriteWeapons: string[];
@@ -135,6 +143,17 @@ export interface UserProfile {
   earningsBalance?: number; // New: earned funds from ads/vectors
   withdrawnTotal?: number; // New: total amount withdrawn
   touchVectorsLogged?: number; // New: number of touch vectors logged
+  isVendor?: boolean;
+  vendorRequested?: boolean;
+  vendorReputation?: {
+    approvedListingsCount: number;
+    rejectedListingsCount: number;
+    totalSales: number;
+    ratingAverage: number;
+    trustScore: number; // e.g. 0 to 100
+    verificationLevel: 'Basic' | 'Silver' | 'Gold' | 'Diamond';
+    badge?: string;
+  };
   withdrawalRequests?: {
     id: string;
     amount: number;
@@ -163,21 +182,23 @@ export interface UserProfile {
   bookmarkedPresets?: string[];
   bookmarkedProducts?: string[];
   ghostPoints?: number;
+  level?: number;
+  xp?: number;
+  savedPresetsCount?: number;
   completedMissions?: string[];
   claimedMissions?: string[];
   missionProgress?: { [missionId: string]: number };
   benchmarkFps?: number;
   benchmarkTouchLatency?: number;
+  selectedTheme?: 'Default' | 'Midnight Neon Blue' | 'Premium Black Gold' | string;
   themePrimary?: string;
   themeSecondary?: string;
   loginStreak?: number;
   lastClaimedDailyRewardDate?: string;
   lastLoginDate?: string;
   dataSharingConsent?: boolean;
-  isVendor?: boolean;
   vendorCode?: string;
   vendorKey?: string;
-  vendorRequested?: boolean;
   vendorFeePaid?: boolean;
   telegramHandle?: string;
   sharesCount?: number;
@@ -226,3 +247,35 @@ export interface Giveaway {
   winner?: string | null; // Winner email if completed
   image?: string;
 }
+
+export interface ThemePreset {
+  id: 'Default' | 'Midnight Neon Blue' | 'Premium Black Gold' | string;
+  name: string;
+  primary: string;
+  secondary: string;
+  description: string;
+}
+
+export const THEME_PRESETS: ThemePreset[] = [
+  {
+    id: 'Default',
+    name: 'Default (Tactical Orange)',
+    primary: '#f97316',
+    secondary: '#f59e0b',
+    description: 'Classic GhostFire tactical orange and amber accent set by system settings'
+  },
+  {
+    id: 'Midnight Neon Blue',
+    name: 'Midnight Neon Blue',
+    primary: '#06b6d4',
+    secondary: '#3b82f6',
+    description: 'Cyberpunk electric cyan and deep neon blue high-contrast profile'
+  },
+  {
+    id: 'Premium Black Gold',
+    name: 'Premium Black Gold',
+    primary: '#D4AF37',
+    secondary: '#F5E6A9',
+    description: 'Luxurious VIP metallic gold and rich amber palette'
+  }
+];

@@ -1,3 +1,4 @@
+import { firebaseApi } from '../lib/firebaseApi';
 import React, { useState, useEffect } from 'react';
 import { Flame, Check, Lock, Gift, Sparkles, Calendar, Trophy, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -70,7 +71,7 @@ export default function DailyStreakTracker({ user, onUpdateUser }: DailyStreakTr
     setSuccess('');
 
     try {
-      const res = await fetch('/api/user/claim-daily', {
+      const res = await firebaseApi.request('user/claim-daily', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -257,9 +258,9 @@ export default function DailyStreakTracker({ user, onUpdateUser }: DailyStreakTr
       <AnimatePresence>
         {error && (
           <motion.div
-            initial={{ opacity: 0, h: 0 }}
-            animate={{ opacity: 1, h: 'auto' }}
-            exit={{ opacity: 0 }}
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
             className="mt-3 p-2.5 bg-red-950/20 border border-red-900/30 rounded-xl text-red-400 text-[9.5px] font-mono flex items-center gap-2"
           >
             <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
@@ -269,9 +270,9 @@ export default function DailyStreakTracker({ user, onUpdateUser }: DailyStreakTr
 
         {success && (
           <motion.div
-            initial={{ opacity: 0, h: 0 }}
-            animate={{ opacity: 1, h: 'auto' }}
-            exit={{ opacity: 0 }}
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
             className="mt-3 p-2.5 bg-emerald-950/20 border border-emerald-900/30 rounded-xl text-emerald-400 text-[9.5px] font-mono flex items-center gap-2"
           >
             <Sparkles className="w-4 h-4 text-emerald-400 shrink-0 animate-bounce" />

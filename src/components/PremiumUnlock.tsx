@@ -1,3 +1,5 @@
+import { firebaseApi } from '../lib/firebaseApi';
+import { getSettingsDoc } from '../lib/dbService';
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -52,6 +54,19 @@ export default function PremiumUnlock({ userEmail, currentUser, onUpdateUser }: 
   // Paid Admin Approval Modal State
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [upgradeTargetTier, setUpgradeTargetTier] = useState<MembershipTier>('Platinum');
+  const [paymentConfig, setPaymentConfig] = useState<any>(null);
+
+  useEffect(() => {
+    async function loadPaymentConfig() {
+      try {
+        const config = await getSettingsDoc('payment_methods');
+        if (config) setPaymentConfig(config);
+      } catch (e) {
+        console.warn('Failed to load payment_methods settings doc:', e);
+      }
+    }
+    loadPaymentConfig();
+  }, []);
 
   // Diagnostics State
   const [activeDiagnostic, setActiveDiagnostic] = useState<'core' | 'gpu' | 'digitizer' | 'gyro' | 'benchmark'>('core');
@@ -168,7 +183,7 @@ export default function PremiumUnlock({ userEmail, currentUser, onUpdateUser }: 
       return;
     }
     try {
-      const res = await fetch('/api/user/update', {
+      const res = await firebaseApi.request('user/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1135,7 +1150,7 @@ export default function PremiumUnlock({ userEmail, currentUser, onUpdateUser }: 
                     return;
                   }
                   try {
-                    const res = await fetch("/api/user/update", {
+                    const res = await firebaseApi.request('user/update', {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({
@@ -1225,33 +1240,77 @@ export default function PremiumUnlock({ userEmail, currentUser, onUpdateUser }: 
                 </div>
 
                 <div className="space-y-2">
-                  <span className="text-[8.5px] font-mono font-bold text-slate-400 uppercase tracking-wider block">CONTACT PLATFORM FOUNDER:</span>
+                  <span className="text-[8.5px] font-mono font-bold text-slate-400 uppercase tracking-wider block">OFFICIAL PAYMENT GATEWAYS & CONTACT:</span>
                   <div className="grid grid-cols-1 gap-2">
-                    {/* WhatsApp DM Button */}
-                    <a
-                      href={`https://api.whatsapp.com/send?text=${encodeURIComponent(
-                        `Hi GhostCore Founder! I would like to purchase and upgrade my account to ${upgradeTargetTier} Tier. My registered account email is: ${userEmail || 'guest_user@gmail.com'}. Please send me the subscription payment details!`
-                      )}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="py-3 px-4 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black text-[10.5px] uppercase tracking-wider rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer"
-                    >
-                      <MessageCircle className="w-4.5 h-4.5 fill-current shrink-0" />
-                      <span>Message Admin on WhatsApp</span>
-                    </a>
+                    {/* Nigerian Bank Transfer Gateway */}
+                    {paymentConfig?.bank_transfer?.enabled !== false && (
+                      <div className="p-3 bg-slate-950 border border-slate-850 rounded-xl space-y-1">
+                        <div className="flex justify-between items-center text-emerald-400 font-extrabold uppercase text-[10px]">
+                          <span>Nigerian Bank Transfer</span>
+                          <span>{paymentConfig?.bank_transfer?.bankName || 'First Bank of Nigeria'}</span>
+                        </div>
+                        <div className="text-slate-300">
+                          Acc Name: <strong className="text-white">{paymentConfig?.bank_transfer?.accountName || 'GhostFire Esports Enterprise'}</strong>
+                        </div>
+                        <div className="text-slate-300 flex justify-between items-center">
+                          <span>Acc No: <strong className="text-amber-400 select-all font-bold">{paymentConfig?.bank_transfer?.accountNumber || '3098765432'}</strong></span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(paymentConfig?.bank_transfer?.accountNumber || '3098765432');
+                              alert('Bank account number copied!');
+                            }}
+                            className="px-1.5 py-0.5 bg-slate-900 text-[8px] text-slate-400 hover:text-white rounded border border-slate-800 uppercase cursor-pointer"
+                          >
+                            Copy
+                          </button>
+                        </div>
+                        <p className="text-[9px] text-slate-400 font-sans mt-1">
+                          {paymentConfig?.bank_transfer?.instructions || 'Transfer fee and send proof to Admin on Telegram for instant activation.'}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Crypto Wallet Gateway */}
+                    {paymentConfig?.crypto_wallet?.enabled !== false && (
+                      <div className="p-3 bg-slate-950 border border-slate-850 rounded-xl space-y-1">
+                        <div className="flex justify-between items-center text-cyan-400 font-extrabold uppercase text-[10px]">
+                          <span>Crypto Wallet Deposit</span>
+                          <span>{paymentConfig?.crypto_wallet?.network || 'USDT (TRC-20)'}</span>
+                        </div>
+                        <div className="text-slate-300 flex justify-between items-center">
+                          <span className="truncate max-w-[240px]">Address: <strong className="text-amber-400 select-all font-bold">{paymentConfig?.crypto_wallet?.walletAddress || '0x71C7656EC7ab88b098defB751B7401B5f6d8976F'}</strong></span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(paymentConfig?.crypto_wallet?.walletAddress || '0x71C7656EC7ab88b098defB751B7401B5f6d8976F');
+                              alert('Crypto wallet address copied!');
+                            }}
+                            className="px-1.5 py-0.5 bg-slate-900 text-[8px] text-slate-400 hover:text-white rounded border border-slate-800 uppercase cursor-pointer"
+                          >
+                            Copy
+                          </button>
+                        </div>
+                        <p className="text-[9px] text-slate-400 font-sans mt-1">
+                          {paymentConfig?.crypto_wallet?.instructions || 'Send USDT and forward TX Hash to Telegram support.'}
+                        </p>
+                      </div>
+                    )}
 
                     {/* Telegram DM Button */}
-                    <a
-                      href={`https://t.me/GhostFireHub_Admin?text=${encodeURIComponent(
-                        `Hi GhostCore Founder! I would like to upgrade to ${upgradeTargetTier} Tier. Registered email: ${userEmail || 'guest_user@gmail.com'}.`
-                      )}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="py-3 px-4 bg-slate-950 hover:bg-slate-850 border border-indigo-500/20 text-indigo-400 hover:text-indigo-300 font-extrabold text-[10.5px] uppercase tracking-wider rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-                    >
-                      <Send className="w-4 h-4 fill-current shrink-0" />
-                      <span>Message Admin on Telegram</span>
-                    </a>
+                    {paymentConfig?.telegram?.enabled !== false && (
+                      <a
+                        href={`${paymentConfig?.telegram?.telegramUrl || 'https://t.me/ghostfirehub1'}?text=${encodeURIComponent(
+                          `Hi Admin! I would like to upgrade my account to ${upgradeTargetTier} Tier. My registered account email is: ${userEmail || 'guest_user@gmail.com'}.`
+                        )}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="py-3 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-[10.5px] uppercase tracking-wider rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer mt-1"
+                      >
+                        <Send className="w-4 h-4 fill-current shrink-0" />
+                        <span>{paymentConfig?.telegram?.buttonLabel || 'Contact Admin on Telegram'}</span>
+                      </a>
+                    )}
                   </div>
                 </div>
 

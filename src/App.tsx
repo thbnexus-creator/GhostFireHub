@@ -38,17 +38,56 @@ import DashboardView from './components/DashboardView';
 import InfoPages from './components/InfoPages';
 import AdminWorkspace from './components/AdminWorkspace';
 import SharedProfileView from './components/SharedProfileView';
+import { UniversalSearchModal } from './components/UniversalSearchModal';
 import WeaponsDB from './components/WeaponsDB';
-import SponsorAdPopup from './components/SponsorAdPopup';
 import EsportsPipeline from './components/EsportsPipeline';
+import SplashAndOnboarding from './components/SplashAndOnboarding';
+import HomeDashboardView from './components/HomeDashboardView';
+import GenerateWorkspace from './components/GenerateWorkspace';
+
+import { auth } from './lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { 
+  getGlobalTheme, 
+  getDevices, 
+  getWeapons, 
+  getMarketplaceProducts, 
+  getCommunityPosts, 
+  getUserProfile, 
+  updateUserProfile,
+  addDevice,
+  addCommunityPost,
+  editCommunityPost,
+  deleteCommunityPost,
+  addMarketplaceProduct,
+  editMarketplaceProduct,
+  deleteMarketplaceProduct,
+  findUserByEmailOrUsername,
+  findUidByEmail,
+  initializeSettings
+} from './lib/dbService';
 
 export default function App() {
   // Navigation State
-  const [activeTab, setActiveTab] = useState<'Home' | 'HUD' | 'DeviceDB' | 'Weapons' | 'Community' | 'Marketplace' | 'Premium' | 'Profile' | 'Auth' | 'About' | 'Help' | 'Contact' | 'Privacy' | 'Terms' | 'AdminWorkspace' | 'Pipeline'>('Home');
+  const [showOnboarding, setShowOnboarding] = useState(() => localStorage.getItem('ghostfire_onboarded') !== 'true');
+  const [activeTab, setActiveTab] = useState<'Home' | 'Generate' | 'HUD' | 'DeviceDB' | 'Weapons' | 'Community' | 'Marketplace' | 'Premium' | 'Profile' | 'Auth' | 'About' | 'Help' | 'Contact' | 'Privacy' | 'Terms' | 'AdminWorkspace' | 'Pipeline'>('Home');
   const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot'>('login');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [isHighVisibility, setIsHighVisibility] = useState(false);
+
+  // Global Cmd+K / Ctrl+K listener for Universal Search Modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setIsSearchModalOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Pop-up Ad States
   const [showPopupAd, setShowPopupAd] = useState(false);
@@ -78,53 +117,62 @@ export default function App() {
   // Load backend data lists
   const loadInitialData = async () => {
     try {
-      fetch('/api/global-theme')
-        .then(res => res.json())
-        .then(data => {
-          if (data && data.themePrimary && data.themeSecondary) {
-            setGlobalTheme({ themePrimary: data.themePrimary, themeSecondary: data.themeSecondary });
-          }
-        })
-        .catch(() => {});
+      // Gracefully initialize settings documents if missing (PART 7)
+      await initializeSettings();
 
-      const devRes = await fetch('/api/devices');
-      if (devRes.ok) setDevicesList(await devRes.json());
+      const theme = await getGlobalTheme();
+      if (theme && theme.themePrimary) {
+        setGlobalTheme(theme);
+      }
 
-      const wepRes = await fetch('/api/weapons');
-      if (wepRes.ok) setWeaponsList(await wepRes.json());
+      const devs = await getDevices();
+      setDevicesList(devs);
 
-      const mktRes = await fetch('/api/marketplace');
-      if (mktRes.ok) setProductsList(await mktRes.json());
+      const weps = await getWeapons();
+      setWeaponsList(weps);
 
-      const postRes = await fetch('/api/posts');
-      if (postRes.ok) setPostsList(await postRes.json());
+      const prods = await getMarketplaceProducts();
+      setProductsList(prods);
+
+      const posts = await getCommunityPosts();
+      setPostsList(posts);
     } catch (err) {
-      console.error('Error fetching initial data from Express backend:', err);
+      console.error('Error fetching initial data from Firestore:', err);
     }
   };
 
   useEffect(() => {
     loadInitialData();
 
-    // Check local session state on mount
-    const savedUser = localStorage.getItem('ghostfire_user');
-    if (savedUser) {
-      try {
-        const parsed = JSON.parse(savedUser);
-        setCurrentUser(parsed);
-        // Sync with backend to get latest points/missions
-        fetch(`/api/user/${encodeURIComponent(parsed.email)}`)
-          .then(res => {
-            if (res.ok) return res.json();
-            throw new Error();
-          })
-          .then(user => {
-            setCurrentUser(user);
-            localStorage.setItem('ghostfire_user', JSON.stringify(user));
-          })
-          .catch(() => {});
-      } catch (e) {}
-    }
+    // Check local session state on mount & synchronize with Firebase auth
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        try {
+          const profile = await getUserProfile(firebaseUser.uid);
+          if (profile) {
+            setCurrentUser(profile);
+            localStorage.setItem('ghostfire_user', JSON.stringify(profile));
+            if (profile.themePrimary && profile.themeSecondary) {
+              setGlobalTheme({
+                themePrimary: profile.themePrimary,
+                themeSecondary: profile.themeSecondary
+              });
+            }
+          }
+        } catch (e) {
+          console.error('Error syncing authenticated user profile:', e);
+        }
+      } else {
+        // Fallback to local storage if offline or not logged in yet
+        const savedUser = localStorage.getItem('ghostfire_user');
+        if (savedUser) {
+          try {
+            const parsed = JSON.parse(savedUser);
+            setCurrentUser(parsed);
+          } catch (e) {}
+        }
+      }
+    });
 
     // Dynamic event listener for automated profile state synchronization
     const handleProfileUpdate = (e: Event) => {
@@ -132,7 +180,7 @@ export default function App() {
       if (customEvent.detail) {
         setCurrentUser(customEvent.detail);
         localStorage.setItem('ghostfire_user', JSON.stringify(customEvent.detail));
-        if (customEvent.detail.role === 'Administrator' && customEvent.detail.themePrimary) {
+        if (customEvent.detail.themePrimary) {
           setGlobalTheme({
             themePrimary: customEvent.detail.themePrimary,
             themeSecondary: customEvent.detail.themeSecondary
@@ -142,36 +190,47 @@ export default function App() {
     };
     window.addEventListener('user-profile-updated', handleProfileUpdate);
 
-    // Parse share parameter
+    // Parse share parameter to view custom public configurations
     const params = new URLSearchParams(window.location.search);
     const shareUser = params.get('share');
     if (shareUser) {
       setLoadingSharedProfile(true);
-      fetch(`/api/public-profile/${encodeURIComponent(shareUser)}`)
-        .then(res => {
-          if (!res.ok) {
-            throw new Error(res.status === 403 ? 'This configuration profile is set to private by the owner.' : 'Tactical profile not found.');
+      
+      const lookupAndLoadProfile = async () => {
+        try {
+          // Find user by username or email in Firestore
+          const matchedUser = await findUserByEmailOrUsername(shareUser);
+          if (!matchedUser) {
+            throw new Error('Tactical profile not found.');
           }
-          return res.json();
-        })
-        .then(data => {
-          setSharedProfileData(data);
-        })
-        .catch(err => {
+
+          if (!matchedUser.isProfilePublic) {
+            throw new Error('This configuration profile is set to private by the owner.');
+          }
+
+          setSharedProfileData(matchedUser);
+        } catch (err: any) {
           setSharedProfileError(err.message || 'Failed to load public profile.');
-        })
-        .finally(() => {
+        } finally {
           setLoadingSharedProfile(false);
-        });
+        }
+      };
+
+      lookupAndLoadProfile();
     }
 
     return () => {
       window.removeEventListener('user-profile-updated', handleProfileUpdate);
+      unsubscribeAuth();
     };
   }, []);
 
+  // Modular feature flag for advertisements - set to true to enable, false to disable
+  const ENABLE_ADS = false;
+
   // Trigger Sponsor Ad Popup on tab transitions for non-administrators
   useEffect(() => {
+    if (!ENABLE_ADS) return;
     // Only show ads to non-administrators (members, vendors, and unregistered guests)
     const isAdmin = currentUser?.role === 'Administrator' || currentUser?.email === 'ghostfirehub@gmail.com' || currentUser?.email === 'ghostfire@ghost.com';
     if (isAdmin) return;
@@ -187,10 +246,11 @@ export default function App() {
       }
       return nextCount;
     });
-  }, [activeTab, currentUser]);
+  }, [activeTab, currentUser, ENABLE_ADS]);
 
   // Periodic automatic Sponsor Ad Popup for unregistered guests (immediately and then dynamically after closing)
   useEffect(() => {
+    if (!ENABLE_ADS) return;
     if (currentUser) return; // Only for unregistered guest users
 
     // Load first ad upon entering (with a 2s delay to let the site load and be visible)
@@ -201,10 +261,11 @@ export default function App() {
     return () => {
       clearTimeout(initialAdTimer);
     };
-  }, [currentUser]);
+  }, [currentUser, ENABLE_ADS]);
 
   // Dynamic ad pop-up recurrence cycle: 90 seconds of uninterrupted usage, then ad re-appears
   useEffect(() => {
+    if (!ENABLE_ADS) return;
     if (currentUser) return;
     if (!showPopupAd) {
       const adRecurrenceTimer = setTimeout(() => {
@@ -212,7 +273,7 @@ export default function App() {
       }, 90000); // 90 seconds (1.5 minutes) of clean, ad-free app usage
       return () => clearTimeout(adRecurrenceTimer);
     }
-  }, [showPopupAd, currentUser]);
+  }, [showPopupAd, currentUser, ENABLE_ADS]);
 
   // Auth triggers
   const handleAuthSuccess = (user: UserProfile) => {
@@ -230,13 +291,8 @@ export default function App() {
   // Add Device API trigger
   const handleAddDevice = async (newDevice: Partial<Device>): Promise<boolean> => {
     try {
-      const res = await fetch('/api/devices', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newDevice)
-      });
-      if (res.ok) {
-        const added = await res.json();
+      const added = await addDevice(newDevice);
+      if (added) {
         setDevicesList(prev => [added, ...prev]);
         return true;
       }
@@ -247,17 +303,10 @@ export default function App() {
   // Add Announcement Post API trigger
   const handleAddPost = async (newPost: Partial<CommunityPost>): Promise<boolean> => {
     try {
-      const res = await fetch('/api/posts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newPost)
-      });
-      if (res.ok) {
-        const addedData = await res.json();
-        if (addedData.success && addedData.post) {
-          setPostsList(prev => [addedData.post, ...prev]);
-          return true;
-        }
+      const added = await addCommunityPost(newPost);
+      if (added) {
+        setPostsList(prev => [added, ...prev]);
+        return true;
       }
     } catch (err) {}
     return false;
@@ -266,17 +315,10 @@ export default function App() {
   // Edit Announcement Post API trigger
   const handleEditPost = async (postId: string, updatedPost: Partial<CommunityPost>): Promise<boolean> => {
     try {
-      const res = await fetch(`/api/posts/${postId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedPost)
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.post) {
-          setPostsList(prev => prev.map(p => p.id === postId ? data.post : p));
-          return true;
-        }
+      const updated = await editCommunityPost(postId, updatedPost);
+      if (updated) {
+        setPostsList(prev => prev.map(p => p.id === postId ? updated : p));
+        return true;
       }
     } catch (err) {}
     return false;
@@ -285,10 +327,8 @@ export default function App() {
   // Delete Announcement Post API trigger
   const handleDeletePost = async (postId: string): Promise<boolean> => {
     try {
-      const res = await fetch(`/api/posts/${postId}`, {
-        method: 'DELETE'
-      });
-      if (res.ok) {
+      const success = await deleteCommunityPost(postId);
+      if (success) {
         setPostsList(prev => prev.filter(p => p.id !== postId));
         return true;
       }
@@ -299,17 +339,10 @@ export default function App() {
   // Add Product to Marketplace trigger
   const handleAddProduct = async (newProduct: Partial<MarketplaceProduct>): Promise<boolean> => {
     try {
-      const res = await fetch('/api/marketplace', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newProduct)
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.product) {
-          setProductsList(prev => [...prev, data.product]);
-          return true;
-        }
+      const added = await addMarketplaceProduct(newProduct);
+      if (added) {
+        setProductsList(prev => [...prev, added]);
+        return true;
       }
     } catch (err) {}
     return false;
@@ -318,17 +351,10 @@ export default function App() {
   // Edit Product in Marketplace trigger
   const handleEditProduct = async (productId: string, updatedProduct: Partial<MarketplaceProduct>): Promise<boolean> => {
     try {
-      const res = await fetch(`/api/marketplace/${productId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedProduct)
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.product) {
-          setProductsList(prev => prev.map(p => p.id === productId ? data.product : p));
-          return true;
-        }
+      const updated = await editMarketplaceProduct(productId, updatedProduct);
+      if (updated) {
+        setProductsList(prev => prev.map(p => p.id === productId ? updated : p));
+        return true;
       }
     } catch (err) {}
     return false;
@@ -337,10 +363,8 @@ export default function App() {
   // Delete Product from Marketplace trigger
   const handleDeleteProduct = async (productId: string): Promise<boolean> => {
     try {
-      const res = await fetch(`/api/marketplace/${productId}`, {
-        method: 'DELETE'
-      });
-      if (res.ok) {
+      const success = await deleteMarketplaceProduct(productId);
+      if (success) {
         setProductsList(prev => prev.filter(p => p.id !== productId));
         return true;
       }
@@ -357,17 +381,31 @@ export default function App() {
   const handleToggleBookmark = async (type: 'preset' | 'product', id: string) => {
     if (!currentUser) return;
     try {
-      const res = await fetch('/api/user/bookmark', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: currentUser.email, type, id })
+      let uid = auth.currentUser?.uid;
+      if (!uid && currentUser.email) {
+        // Query uid from email
+        const fetchedUid = await findUidByEmail(currentUser.email);
+        if (fetchedUid) uid = fetchedUid;
+      }
+      if (!uid) return;
+
+      const isBookmarked = type === 'preset'
+        ? currentUser.bookmarkedPresets?.includes(id)
+        : currentUser.bookmarkedProducts?.includes(id);
+
+      const field = type === 'preset' ? 'bookmarkedPresets' : 'bookmarkedProducts';
+      const currentList = currentUser[field] || [];
+      const updatedList = isBookmarked
+        ? currentList.filter(x => x !== id)
+        : [...currentList, id];
+
+      const updated = await updateUserProfile(uid, {
+        [field]: updatedList
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.user) {
-          setCurrentUser(data.user);
-          localStorage.setItem('ghostfire_user', JSON.stringify(data.user));
-        }
+
+      if (updated) {
+        setCurrentUser(updated);
+        localStorage.setItem('ghostfire_user', JSON.stringify(updated));
       }
     } catch (e) {
       console.error('Error toggling bookmark:', e);
@@ -376,13 +414,35 @@ export default function App() {
 
   const isAdmin = currentUser?.role === 'Administrator' || currentUser?.role === 'Staff' || currentUser?.email === 'ghostfirehub@gmail.com' || currentUser?.email === 'ghostfire@ghost.com';
 
+  const getActiveTheme = () => {
+    if (currentUser?.selectedTheme === 'Midnight Neon Blue') {
+      return { themePrimary: '#06b6d4', themeSecondary: '#3b82f6' };
+    }
+    if (currentUser?.selectedTheme === 'Premium Black Gold') {
+      return { themePrimary: '#D4AF37', themeSecondary: '#F5E6A9' };
+    }
+    if (currentUser?.selectedTheme === 'Default') {
+      return globalTheme;
+    }
+    if (currentUser?.themePrimary && currentUser?.themeSecondary) {
+      return { themePrimary: currentUser.themePrimary, themeSecondary: currentUser.themeSecondary };
+    }
+    return globalTheme;
+  };
+
+  const activeTheme = getActiveTheme();
+
+  if (showOnboarding) {
+    return <SplashAndOnboarding onComplete={() => setShowOnboarding(false)} />;
+  }
+
   return (
     <div className={`min-h-screen bg-slate-950 text-slate-200 font-sans flex flex-col selection:bg-orange-500/30 selection:text-orange-200 ${isHighVisibility ? 'high-visibility' : ''}`}>
       
       <style dangerouslySetInnerHTML={{ __html: `
         :root {
-          --theme-primary: ${globalTheme.themePrimary};
-          --theme-secondary: ${globalTheme.themeSecondary};
+          --theme-primary: ${activeTheme.themePrimary};
+          --theme-secondary: ${activeTheme.themeSecondary};
           
           --theme-primary-hover: color-mix(in srgb, var(--theme-primary) 85%, black);
           --theme-primary-dark: color-mix(in srgb, var(--theme-primary) 70%, black);
@@ -437,6 +497,71 @@ export default function App() {
         .bg-amber-500\\/10 { background-color: color-mix(in srgb, var(--theme-secondary) 10%, transparent) !important; }
         .border-amber-500 { border-color: var(--theme-secondary) !important; }
         .border-amber-500\\/20 { border-color: color-mix(in srgb, var(--theme-secondary) 20%, transparent) !important; }
+
+        ${globalTheme.themePrimary.toLowerCase() === '#d4af37' ? `
+          /* PREMIUM BLACK & GOLD THEME OVERRIDES */
+          body, .bg-slate-950, .min-h-screen {
+            background-color: #050505 !important;
+            color: #FFFFFF !important;
+          }
+          .bg-slate-900, .bg-slate-900\\/60, .bg-slate-900\\/50, .bg-slate-900\\/95 {
+            background-color: #121212 !important;
+          }
+          .bg-slate-850, .bg-slate-950\\/40, .bg-slate-950\\/60, .bg-slate-900\\/80, .bg-slate-900\\/40, .bg-slate-950\\/20 {
+            background-color: #181818 !important;
+          }
+          
+          /* Cards & Panels Premium Borders */
+          .border-slate-900, .border-slate-850, .border-slate-800, .border-slate-900\\/80, .border-slate-800\\/40, .border-slate-850\\/80 {
+            border-color: rgba(212, 175, 55, 0.18) !important;
+          }
+          .rounded-2xl.border, .rounded-xl.border, .bg-slate-900, .bg-slate-850 {
+            border-color: rgba(212, 175, 55, 0.18) !important;
+          }
+          
+          /* Elegant Gold Glow on primary actions and buttons */
+          .bg-orange-500, .bg-orange-600, .bg-amber-500, .bg-orange-500-gradient {
+            box-shadow: 0 0 12px rgba(212, 175, 55, 0.35) !important;
+            border: 1px solid rgba(255, 215, 0, 0.45) !important;
+            background: linear-gradient(135deg, #B8860B 0%, #D4AF37 50%, #FFD700 100%) !important;
+            color: #050505 !important;
+            font-weight: 900 !important;
+          }
+          .bg-orange-500:hover, .bg-orange-600:hover, .bg-amber-500:hover {
+            box-shadow: 0 0 20px rgba(212, 175, 55, 0.6) !important;
+            border: 1px solid rgba(255, 215, 0, 0.7) !important;
+            filter: brightness(1.1) !important;
+          }
+          
+          /* Progress bars with animated gold gradients */
+          .h-full.bg-gradient-to-r {
+            background: linear-gradient(90deg, #B8860B 0%, #D4AF37 50%, #FFD700 100%) !important;
+            background-size: 200% auto !important;
+            animation: goldWave 3s linear infinite !important;
+          }
+          @keyframes goldWave {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+          }
+          
+          /* Success, Warning, Error Overrides */
+          .text-emerald-500, .text-green-500, .text-emerald-400 { color: #37D67A !important; }
+          .text-yellow-500, .text-amber-500, .text-yellow-400 { color: #F4B400 !important; }
+          .text-red-500, .text-red-400 { color: #EA4335 !important; }
+          .bg-emerald-500 { background-color: #37D67A !important; }
+          .bg-yellow-500 { background-color: #F4B400 !important; }
+          .bg-red-500 { background-color: #EA4335 !important; }
+
+          /* Metallic gold badges automatic display */
+          .metallic-gold-badge, .border-amber-500\\/20.text-amber-500, .bg-amber-500\\/10 {
+            background: linear-gradient(135deg, #FFF8DC 0%, #D4AF37 50%, #B8860B 100%) !important;
+            color: #050505 !important;
+            border: 1px solid #FFD700 !important;
+            box-shadow: 0 0 8px rgba(212, 175, 55, 0.5) !important;
+            font-weight: 900 !important;
+          }
+        ` : ''}
       ` }} />
 
       {/* Top Gaming Navigation Header bar */}
@@ -461,148 +586,72 @@ export default function App() {
             </div>
           </button>
 
-          {/* Global search input (Header) */}
+          {/* Global search trigger (Header) */}
           <div className="relative hidden lg:block max-w-xs w-full">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Search className="h-3.5 w-3.5 text-slate-500" />
-            </div>
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search products, posts, devices..."
-              className="w-full bg-slate-950 border border-slate-850 rounded-xl pl-9 pr-3 py-1.5 text-[11px] text-slate-200 outline-none focus:border-orange-500 transition-colors placeholder:text-slate-700 font-medium"
-            />
-            {searchQuery && (
-              <div className="absolute top-full mt-2 w-72 left-0 bg-slate-900/95 border border-slate-850 rounded-2xl shadow-2xl p-3 flex flex-col gap-3 backdrop-blur-xl z-50">
-                <div className="flex justify-between items-center border-b border-slate-850 pb-1.5">
-                  <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Instant Matches</span>
-                  <button onClick={() => setSearchQuery('')} className="text-[9px] text-slate-500 hover:text-slate-300 uppercase font-mono">Clear</button>
-                </div>
-                
-                {/* Products category */}
-                {productsList.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.description.toLowerCase().includes(searchQuery.toLowerCase())).length > 0 && (
-                  <div>
-                    <h4 className="text-[8px] font-black text-orange-500 uppercase tracking-widest mb-1">Marketplace</h4>
-                    <div className="space-y-1">
-                      {productsList.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.description.toLowerCase().includes(searchQuery.toLowerCase())).slice(0, 2).map(product => (
-                        <button
-                          key={product.id}
-                          onClick={() => {
-                            setActiveTab('Marketplace');
-                          }}
-                          className="w-full text-left p-1.5 hover:bg-slate-950/40 rounded-lg text-[10px] text-slate-300 hover:text-white transition-colors block truncate"
-                        >
-                          🛍️ {product.name} — <span className="text-orange-400 font-mono font-bold">${product.price}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Posts category */}
-                {postsList.filter(p => p.title.toLowerCase().includes(searchQuery.toLowerCase()) || p.content.toLowerCase().includes(searchQuery.toLowerCase())).length > 0 && (
-                  <div>
-                    <h4 className="text-[8px] font-black text-indigo-400 uppercase tracking-widest mb-1">Community Drops</h4>
-                    <div className="space-y-1">
-                      {postsList.filter(p => p.title.toLowerCase().includes(searchQuery.toLowerCase()) || p.content.toLowerCase().includes(searchQuery.toLowerCase())).slice(0, 2).map(post => (
-                        <button
-                          key={post.id}
-                          onClick={() => {
-                            setActiveTab('Community');
-                          }}
-                          className="w-full text-left p-1.5 hover:bg-slate-950/40 rounded-lg text-[10px] text-slate-300 hover:text-white transition-colors block truncate"
-                        >
-                          💬 {post.title}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Devices category */}
-                {devicesList.filter(d => d.brand.toLowerCase().includes(searchQuery.toLowerCase()) || d.model.toLowerCase().includes(searchQuery.toLowerCase())).length > 0 && (
-                  <div>
-                    <h4 className="text-[8px] font-black text-emerald-500 uppercase tracking-widest mb-1">Devices DB</h4>
-                    <div className="space-y-1">
-                      {devicesList.filter(d => d.brand.toLowerCase().includes(searchQuery.toLowerCase()) || d.model.toLowerCase().includes(searchQuery.toLowerCase())).slice(0, 2).map(device => (
-                        <button
-                          key={device.id}
-                          onClick={() => {
-                            setActiveTab('DeviceDB');
-                          }}
-                          className="w-full text-left p-1.5 hover:bg-slate-950/40 rounded-lg text-[10px] text-slate-300 hover:text-white transition-colors block truncate"
-                        >
-                          📱 {device.brand} {device.model}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Default no matches */}
-                {productsList.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 &&
-                 postsList.filter(p => p.title.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 &&
-                 devicesList.filter(d => d.model.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 && (
-                   <span className="text-[10px] text-slate-500 italic text-center py-2">No matching items found.</span>
-                 )}
+            <button
+              onClick={() => setIsSearchModalOpen(true)}
+              className="flex items-center justify-between w-full bg-slate-950 border border-slate-850 hover:border-orange-500/50 rounded-xl px-3 py-1.5 text-[11px] text-slate-400 font-medium transition-all cursor-pointer group"
+            >
+              <div className="flex items-center gap-2">
+                <Search className="h-3.5 w-3.5 text-slate-500 group-hover:text-orange-400 transition-colors" />
+                <span>Search products, devices, guns...</span>
               </div>
-            )}
+              <kbd className="px-1.5 py-0.5 bg-slate-900 border border-slate-800 text-[9px] font-mono font-bold text-slate-500 rounded">⌘K</kbd>
+            </button>
           </div>
 
           {/* Core App Navigation Buttons (Desktop only) */}
           <nav className="hidden md:flex flex-wrap gap-1 bg-slate-950 border border-slate-850 p-1 rounded-2xl text-[11px] font-bold uppercase tracking-wider">
             <button
               onClick={() => setActiveTab('Home')}
-              className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${activeTab === 'Home' ? 'bg-orange-600 text-slate-950 font-black' : 'text-slate-400 hover:text-slate-200'}`}
+              className={`px-3.5 py-1.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'Home' ? 'bg-orange-600 text-slate-950 font-black' : 'text-slate-400 hover:text-slate-200'}`}
+            >
+              <Gamepad2 className="w-3.5 h-3.5" />
+              <span>Home</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('Generate')}
+              className={`px-3.5 py-1.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'Generate' ? 'bg-orange-600 text-slate-950 font-black' : 'text-slate-400 hover:text-slate-200'}`}
             >
               <Sliders className="w-3.5 h-3.5" />
-              <span>GhostCore™</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('HUD')}
-              className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${activeTab === 'HUD' ? 'bg-orange-600 text-slate-950 font-black' : 'text-slate-400 hover:text-slate-200'}`}
-            >
-              <Layout className="w-3.5 h-3.5" />
-              <span>HUD Builder</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('DeviceDB')}
-              className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${activeTab === 'DeviceDB' ? 'bg-orange-600 text-slate-950 font-black' : 'text-slate-400 hover:text-slate-200'}`}
-            >
-              <Smartphone className="w-3.5 h-3.5" />
-              <span>Devices</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('Community')}
-              className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${activeTab === 'Community' ? 'bg-orange-600 text-slate-950 font-black' : 'text-slate-400 hover:text-slate-200'}`}
-            >
-              <Users className="w-3.5 h-3.5" />
-              <span>Community</span>
+              <span>Generate</span>
             </button>
 
             <button
               onClick={() => setActiveTab('Marketplace')}
-              className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${activeTab === 'Marketplace' ? 'bg-orange-600 text-slate-950 font-black' : 'text-slate-400 hover:text-slate-200'}`}
+              className={`px-3.5 py-1.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'Marketplace' ? 'bg-orange-600 text-slate-950 font-black' : 'text-slate-400 hover:text-slate-200'}`}
             >
               <ShoppingBag className="w-3.5 h-3.5" />
               <span>Marketplace</span>
             </button>
 
             <button
-              onClick={() => setActiveTab('Pipeline')}
-              className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${activeTab === 'Pipeline' ? 'bg-orange-600 text-slate-950 font-black' : 'text-slate-400 hover:text-slate-200'}`}
+              onClick={() => setActiveTab('Community')}
+              className={`px-3.5 py-1.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'Community' ? 'bg-orange-600 text-slate-950 font-black' : 'text-slate-400 hover:text-slate-200'}`}
             >
-              <Gamepad2 className="w-3.5 h-3.5" />
-              <span>Pipeline</span>
+              <Users className="w-3.5 h-3.5" />
+              <span>Community</span>
+            </button>
+
+            <button
+              onClick={() => {
+                if (currentUser) {
+                  setActiveTab('Profile');
+                } else {
+                  setAuthMode('login');
+                  setActiveTab('Auth');
+                }
+              }}
+              className={`px-3.5 py-1.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'Profile' || activeTab === 'Auth' ? 'bg-orange-600 text-slate-950 font-black' : 'text-slate-400 hover:text-slate-200'}`}
+            >
+              <User className="w-3.5 h-3.5" />
+              <span>Profile</span>
             </button>
 
             <button
               onClick={() => setActiveTab('Premium')}
-              className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${activeTab === 'Premium' ? 'bg-amber-500 text-slate-950 font-black shadow' : 'text-amber-500 hover:text-amber-400'}`}
+              className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'Premium' ? 'bg-amber-500 text-slate-950 font-black shadow' : 'text-amber-500 hover:text-amber-400'}`}
             >
               <Crown className="w-3.5 h-3.5 fill-current" />
               <span>Premium</span>
@@ -611,7 +660,7 @@ export default function App() {
             {isAdmin && (
               <button
                 onClick={() => setActiveTab('AdminWorkspace')}
-                className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 ${activeTab === 'AdminWorkspace' ? 'bg-red-600/20 border border-red-500/30 text-red-400 font-extrabold shadow' : 'text-red-400 hover:text-red-300'}`}
+                className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'AdminWorkspace' ? 'bg-red-600/20 border border-red-500/30 text-red-400 font-extrabold shadow' : 'text-red-400 hover:text-red-300'}`}
               >
                 <ShieldAlert className="w-3.5 h-3.5" />
                 <span>Workspace</span>
@@ -712,32 +761,16 @@ export default function App() {
                     onClick={() => { setActiveTab('Home'); setIsMobileMenuOpen(false); }}
                     className={`px-4 py-3 rounded-xl transition-all flex items-center gap-3 font-bold uppercase tracking-wider ${activeTab === 'Home' ? 'bg-orange-600 text-slate-950 font-black' : 'text-slate-400 hover:bg-slate-900/40 hover:text-slate-200'}`}
                   >
+                    <Gamepad2 className="w-4 h-4" />
+                    <span>Home Control Room</span>
+                  </button>
+
+                  <button
+                    onClick={() => { setActiveTab('Generate'); setIsMobileMenuOpen(false); }}
+                    className={`px-4 py-3 rounded-xl transition-all flex items-center gap-3 font-bold uppercase tracking-wider ${activeTab === 'Generate' ? 'bg-orange-600 text-slate-950 font-black' : 'text-slate-400 hover:bg-slate-900/40 hover:text-slate-200'}`}
+                  >
                     <Sliders className="w-4 h-4" />
-                    <span>GhostCore™ Engine</span>
-                  </button>
-
-                  <button
-                    onClick={() => { setActiveTab('HUD'); setIsMobileMenuOpen(false); }}
-                    className={`px-4 py-3 rounded-xl transition-all flex items-center gap-3 font-bold uppercase tracking-wider ${activeTab === 'HUD' ? 'bg-orange-600 text-slate-950 font-black' : 'text-slate-400 hover:bg-slate-900/40 hover:text-slate-200'}`}
-                  >
-                    <Layout className="w-4 h-4" />
-                    <span>HUD Builder</span>
-                  </button>
-
-                  <button
-                    onClick={() => { setActiveTab('DeviceDB'); setIsMobileMenuOpen(false); }}
-                    className={`px-4 py-3 rounded-xl transition-all flex items-center gap-3 font-bold uppercase tracking-wider ${activeTab === 'DeviceDB' ? 'bg-orange-600 text-slate-950 font-black' : 'text-slate-400 hover:bg-slate-900/40 hover:text-slate-200'}`}
-                  >
-                    <Smartphone className="w-4 h-4" />
-                    <span>Devices Database</span>
-                  </button>
-
-                  <button
-                    onClick={() => { setActiveTab('Community'); setIsMobileMenuOpen(false); }}
-                    className={`px-4 py-3 rounded-xl transition-all flex items-center gap-3 font-bold uppercase tracking-wider ${activeTab === 'Community' ? 'bg-orange-600 text-slate-950 font-black' : 'text-slate-400 hover:bg-slate-900/40 hover:text-slate-200'}`}
-                  >
-                    <Users className="w-4 h-4" />
-                    <span>Community Drop</span>
+                    <span>Generate Workspace</span>
                   </button>
 
                   <button
@@ -749,12 +782,22 @@ export default function App() {
                   </button>
 
                   <button
-                    onClick={() => { setActiveTab('Pipeline'); setIsMobileMenuOpen(false); }}
-                    className={`px-4 py-3 rounded-xl transition-all flex items-center gap-3 font-bold uppercase tracking-wider ${activeTab === 'Pipeline' ? 'bg-orange-600 text-slate-950 font-black' : 'text-slate-400 hover:bg-slate-900/40 hover:text-slate-200'}`}
+                    onClick={() => { setActiveTab('Community'); setIsMobileMenuOpen(false); }}
+                    className={`px-4 py-3 rounded-xl transition-all flex items-center gap-3 font-bold uppercase tracking-wider ${activeTab === 'Community' ? 'bg-orange-600 text-slate-950 font-black' : 'text-slate-400 hover:bg-slate-900/40 hover:text-slate-200'}`}
                   >
-                    <Gamepad2 className="w-4 h-4" />
-                    <span>Games Pipeline</span>
+                    <Users className="w-4 h-4" />
+                    <span>Community Drop</span>
                   </button>
+
+                  {currentUser && (
+                    <button
+                      onClick={() => { setActiveTab('Profile'); setIsMobileMenuOpen(false); }}
+                      className={`px-4 py-3 rounded-xl transition-all flex items-center gap-3 font-bold uppercase tracking-wider ${activeTab === 'Profile' ? 'bg-orange-600 text-slate-950 font-black' : 'text-slate-400 hover:bg-slate-900/40 hover:text-slate-200'}`}
+                    >
+                      <User className="w-4 h-4" />
+                      <span>My Config Profile</span>
+                    </button>
+                  )}
 
                   <button
                     onClick={() => { setActiveTab('Premium'); setIsMobileMenuOpen(false); }}
@@ -847,7 +890,7 @@ export default function App() {
       )}
 
       {/* Main Body Layout Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 lg:p-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 lg:p-6 pb-24 md:pb-6">
         
         {/* SHARED PROFILE SHOWCASE INTERCEPT */}
         {loadingSharedProfile && (
@@ -900,10 +943,30 @@ export default function App() {
         {/* REGULAR TAB DISPLAYS */}
         {!loadingSharedProfile && !sharedProfileError && !sharedProfileData && (
           <>
-            {/* 1. CALIBRATION ENGINE (GHOSTCORE) */}
+            {/* 1. HOME DASHBOARD OVERVIEW */}
             {activeTab === 'Home' && (
               <div className="animate-fadeIn">
-                <RecommendationEngine 
+                <HomeDashboardView
+                  user={currentUser}
+                  onUpdateUser={(updated) => {
+                    setCurrentUser(updated);
+                    localStorage.setItem('ghostfire_user', JSON.stringify(updated));
+                  }}
+                  posts={postsList}
+                  setActiveTab={setActiveTab}
+                  isAdmin={isAdmin}
+                  onNavigateToAuth={() => {
+                    setAuthMode('login');
+                    setActiveTab('Auth');
+                  }}
+                />
+              </div>
+            )}
+
+            {/* 2. CENTRALIZED GENERATOR WORKSPACE */}
+            {activeTab === 'Generate' && (
+              <div className="animate-fadeIn">
+                <GenerateWorkspace
                   userEmail={currentUser?.email}
                   currentUser={currentUser}
                   onSaveSuccess={() => {}}
@@ -915,28 +978,9 @@ export default function App() {
                   clearSelectedWeapon={() => setSelectedWeaponBuffer(null)}
                   onToggleBookmark={handleToggleBookmark}
                   bookmarkedPresetIds={currentUser?.bookmarkedPresets || []}
-                />
-              </div>
-            )}
-
-            {/* 2. HUD WORKSPACE */}
-            {activeTab === 'HUD' && (
-              <div className="animate-fadeIn">
-                <HUDCanvas 
-                  userEmail={currentUser?.email}
-                />
-              </div>
-            )}
-
-            {/* 3. DEVICE DB */}
-            {activeTab === 'DeviceDB' && (
-              <div className="animate-fadeIn">
-                <DeviceDB 
-                  devices={devicesList}
-                  onDeviceSelected={handleUseDeviceSpecsInEngine}
-                  onAddDevice={handleAddDevice}
                   isAdmin={isAdmin}
-                  initialSearchQuery={searchQuery}
+                  handleAddDevice={handleAddDevice}
+                  useDeviceSpecs={handleUseDeviceSpecsInEngine}
                 />
               </div>
             )}
@@ -1091,19 +1135,63 @@ export default function App() {
         </div>
       </footer>
 
-      {/* Interactive Sponsor Ad Dialog */}
-      <AnimatePresence>
-        {showPopupAd && (
-          <SponsorAdPopup 
-            currentUser={currentUser} 
-            onAdClose={() => setShowPopupAd(false)} 
-            onNavigateToAuth={() => {
-              setShowPopupAd(false);
-              setActiveTab('Auth');
-            }}
-          />
-        )}
-      </AnimatePresence>
+      {/* Floating 5-Tab Mobile Bottom Navigation Bar */}
+      <div className="md:hidden fixed bottom-3 left-3 right-3 z-40">
+        <div className="bg-slate-950/80 border border-slate-850/60 backdrop-blur-xl rounded-2xl p-1.5 flex justify-around items-center shadow-2xl shadow-cyan-500/5 relative overflow-hidden">
+          
+          {['Home', 'Generate', 'Marketplace', 'Community', 'Profile'].map((tab) => {
+            const isTabActive = activeTab === tab || (tab === 'Profile' && activeTab === 'Auth');
+            
+            // Choose icon
+            let IconComponent = Gamepad2;
+            if (tab === 'Generate') IconComponent = Sliders;
+            if (tab === 'Marketplace') IconComponent = ShoppingBag;
+            if (tab === 'Community') IconComponent = Users;
+            if (tab === 'Profile') IconComponent = User;
+
+            return (
+              <button
+                key={tab}
+                onClick={() => {
+                  if (tab === 'Profile' && !currentUser) {
+                    setAuthMode('login');
+                    setActiveTab('Auth');
+                  } else {
+                    setActiveTab(tab as any);
+                  }
+                }}
+                className="relative py-2.5 px-3 flex flex-col items-center justify-center gap-1 cursor-pointer focus:outline-none flex-1 rounded-xl transition-all"
+              >
+                {isTabActive && (
+                  <motion.div
+                    layoutId="active-mobile-tab-indicator"
+                    className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 to-purple-500/10 border border-cyan-500/20 rounded-xl -z-10"
+                    transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                  />
+                )}
+                <IconComponent className={`w-4.5 h-4.5 transition-all ${isTabActive ? 'text-cyan-400 scale-110' : 'text-slate-500'}`} />
+                <span className={`text-[8px] font-mono font-black uppercase tracking-wider ${isTabActive ? 'text-cyan-400 font-extrabold' : 'text-slate-500'}`}>
+                  {tab}
+                </span>
+              </button>
+            );
+          })}
+
+        </div>
+      </div>
+
+      {/* Universal Search Modal */}
+      <UniversalSearchModal
+        isOpen={isSearchModalOpen}
+        onClose={() => setIsSearchModalOpen(false)}
+        onSelectResult={(category, item) => {
+          if (category === 'marketplace') setActiveTab('Marketplace');
+          else if (category === 'devices') setActiveTab('DeviceDB');
+          else if (category === 'weapons') setActiveTab('Weapons');
+          else if (category === 'posts') setActiveTab('Community');
+          else if (category === 'presets') setActiveTab('Generate');
+        }}
+      />
 
     </div>
   );

@@ -1,3 +1,4 @@
+import { firebaseApi } from '../lib/firebaseApi';
 import React, { useState } from 'react';
 import { 
   Send, 
@@ -57,7 +58,7 @@ export default function VendorApplicationForm({
     setError('');
 
     try {
-      const response = await fetch('/api/vendor/apply', {
+      const response = await firebaseApi.request('vendor/apply', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

@@ -1,3 +1,4 @@
+import { firebaseApi } from '../lib/firebaseApi';
 import React, { useState, useEffect } from 'react';
 import { 
   ShoppingBag, 
@@ -123,7 +124,7 @@ export default function MarketplaceView({
 
     try {
       // First, try the proper backend one-time activation endpoint
-      const activateRes = await fetch("/api/user/activate-vendor-token", {
+      const activateRes = await firebaseApi.request('user/activate-vendor-token', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -161,7 +162,7 @@ export default function MarketplaceView({
       }
 
       // Fallback update for legacy / custom direct keys
-      const res = await fetch("/api/user/update", {
+      const res = await firebaseApi.request('user/update', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -203,7 +204,7 @@ export default function MarketplaceView({
     setVendorSuccess("");
 
     try {
-      const res = await fetch("/api/user/update", {
+      const res = await firebaseApi.request('user/update', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -1,3 +1,4 @@
+import { firebaseApi } from '../lib/firebaseApi';
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -109,7 +110,7 @@ export default function EsportsPipeline({ userEmail, userName, isAdmin }: Esport
 
   const fetchFeedback = async () => {
     try {
-      const res = await fetch('/api/game-feedback');
+      const res = await firebaseApi.request('game-feedback');
       if (res.ok) {
         const data = await res.json();
         setFeedbacks(data);
@@ -140,7 +141,7 @@ export default function EsportsPipeline({ userEmail, userName, isAdmin }: Esport
     const gameName = targetGame ? targetGame.name : 'Unknown Game';
 
     try {
-      const res = await fetch('/api/game-feedback', {
+      const res = await firebaseApi.request('game-feedback', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

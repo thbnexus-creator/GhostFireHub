@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { firebaseApi } from '../lib/firebaseApi';
 import { 
   Users, 
   Send, 
@@ -72,7 +73,7 @@ export default function CommunitySection({
     setLeaderboardLoading(true);
     setLeaderboardError('');
     try {
-      const res = await fetch('/api/leaderboard');
+      const res = await firebaseApi.request('leaderboard');
       if (res.ok) {
         const data = await res.json();
         setLeaderboardData(data);
@@ -143,7 +144,7 @@ export default function CommunitySection({
       const authorName = savedUser ? JSON.parse(savedUser).displayName || 'Player' : 'Player';
       const authorEmail = savedUser ? JSON.parse(savedUser).email || '' : '';
 
-      const res = await fetch(`/api/posts/${postId}/comments`, {
+      const res = await firebaseApi.request(`posts/${postId}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

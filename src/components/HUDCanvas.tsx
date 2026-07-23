@@ -1,3 +1,4 @@
+import { firebaseApi } from '../lib/firebaseApi';
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Maximize2, 
@@ -67,7 +68,7 @@ export default function HUDCanvas({ userEmail, onLayoutSaved }: HUDProps) {
   const fetchLayouts = async () => {
     if (!userEmail) return;
     try {
-      const res = await fetch(`/api/hud/list/${encodeURIComponent(userEmail)}`);
+      const res = await firebaseApi.request(`hud/list/${encodeURIComponent(userEmail)}`);
       const data = await res.json();
       if (Array.isArray(data) && data.length > 0) {
         setLayouts(data);
@@ -181,7 +182,7 @@ export default function HUDCanvas({ userEmail, onLayoutSaved }: HUDProps) {
     }
 
     try {
-      const res = await fetch('/api/hud/save', {
+      const res = await firebaseApi.request('hud/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -235,7 +236,7 @@ export default function HUDCanvas({ userEmail, onLayoutSaved }: HUDProps) {
 
     if (userEmail) {
       try {
-        await fetch('/api/hud/delete', {
+        await firebaseApi.request('hud/delete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: userEmail, id: activeLayout.id })
@@ -267,7 +268,7 @@ export default function HUDCanvas({ userEmail, onLayoutSaved }: HUDProps) {
     setSuccessMsg('');
     
     try {
-      const analyzeRes = await fetch('/api/issues/analyze', {
+      const analyzeRes = await firebaseApi.request('issues/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -279,7 +280,7 @@ export default function HUDCanvas({ userEmail, onLayoutSaved }: HUDProps) {
 
       if (!analyzeRes.ok) {
         const errData = await analyzeRes.json();
-        throw new Error(errData.error || 'Gemini AI service unavailable. Please check your network connection.');
+        throw new Error(errData.error || 'GhostFire Core AI service unavailable. Please check your network connection.');
       }
 
       const analyzeData = await analyzeRes.json();
@@ -288,7 +289,7 @@ export default function HUDCanvas({ userEmail, onLayoutSaved }: HUDProps) {
 
       if (shareToDatabase) {
         try {
-          await fetch('/api/issues', {
+          await firebaseApi.request('issues', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -924,7 +925,7 @@ export default function HUDCanvas({ userEmail, onLayoutSaved }: HUDProps) {
                 Upload HUD Screenshot
               </h3>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                Upload a screen capture of your Garena Free Fire controls setting layout. Gemini will evaluate reach ergonomics, button clusters, and gesture overlap points.
+                Upload a screen capture of your Garena Free Fire controls setting layout. GhostFire Core AI will evaluate reach ergonomics, button clusters, and gesture overlap points.
               </p>
             </div>
 
@@ -1034,7 +1035,7 @@ export default function HUDCanvas({ userEmail, onLayoutSaved }: HUDProps) {
                   <p className="text-[11px] text-slate-500">Live esports tactile assessment reports</p>
                 </div>
                 <span className="px-2.5 py-1 bg-orange-600/10 border border-orange-500/20 text-orange-400 text-[9px] font-mono rounded-full font-black uppercase tracking-wider">
-                  Gemini Active
+                  GhostFire Core AI Active
                 </span>
               </div>
 
@@ -1062,7 +1063,7 @@ export default function HUDCanvas({ userEmail, onLayoutSaved }: HUDProps) {
                   <div className="max-w-md space-y-1">
                     <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wide">NO SCREENSHOT UNDER ANALYSIS</h4>
                     <p className="text-[11px] text-slate-500 leading-normal">
-                      Select and upload your Free Fire custom HUD gameplay capture on the left. Gemini will scan touch zones, button dimensions, thumb grips, and claw posture to generate custom tactile blueprints.
+                      Select and upload your Free Fire custom HUD gameplay capture on the left. GhostFire Core AI will scan touch zones, button dimensions, thumb grips, and claw posture to generate custom tactile blueprints.
                     </p>
                   </div>
                   <div className="grid grid-cols-3 gap-3 w-full max-w-sm pt-2">

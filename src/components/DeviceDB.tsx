@@ -118,7 +118,7 @@ export default function DeviceDB({ devices, onDeviceSelected, onAddDevice, isAdm
   const [selectedRam, setSelectedRam] = useState('All');
   const [selectedHz, setSelectedHz] = useState('All');
 
-  // Helper sensitivity calculator based on spec rules in server.ts
+  // Helper sensitivity calculator based on standard spec rules
   function calculateDefaultSensitivity(device: Device) {
     let general = 100;
     let redDot = 95;

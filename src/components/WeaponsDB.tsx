@@ -1,3 +1,4 @@
+import { firebaseApi } from '../lib/firebaseApi';
 import React, { useState } from 'react';
 import { 
   Flame, 
@@ -203,10 +204,10 @@ export default function WeaponsDB({
     setSuccess('');
 
     try {
-      const url = editingWeapon ? `/api/weapons/${editingWeapon.id}` : '/api/weapons';
+      const path = editingWeapon ? `weapons/${editingWeapon.id}` : 'weapons';
       const method = editingWeapon ? 'PUT' : 'POST';
       
-      const res = await fetch(url, {
+      const res = await firebaseApi.request(path, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -240,7 +241,7 @@ export default function WeaponsDB({
     setError('');
     setSuccess('');
     try {
-      const res = await fetch(`/api/weapons/${id}?adminEmail=${encodeURIComponent(userEmail || '')}`, {
+      const res = await firebaseApi.request(`weapons/${id}?adminEmail=${encodeURIComponent(userEmail || '')}`, {
         method: 'DELETE'
       });
 
@@ -258,7 +259,7 @@ export default function WeaponsDB({
   };
 
   const handleAdminSync = async () => {
-    if (!window.confirm('Sync with Garena live database & enrich stats using Gemini AI?')) {
+    if (!window.confirm('Sync with Garena live database & enrich stats using GhostFire Core AI?')) {
       return;
     }
     setLoading(true);
@@ -266,7 +267,7 @@ export default function WeaponsDB({
     setSuccess('');
 
     try {
-      const res = await fetch('/api/weapons/sync', {
+      const res = await firebaseApi.request('weapons/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ adminEmail: userEmail })
@@ -274,7 +275,7 @@ export default function WeaponsDB({
 
       if (res.ok) {
         const data = await res.json();
-        setSuccess(`Successfully synced ${data.count} Garena weapons! Enriched ${data.enriched} items using Gemini.`);
+        setSuccess(`Successfully synced ${data.count} Garena weapons! Enriched ${data.enriched} items using GhostFire Core AI.`);
         if (onRefreshWeapons) onRefreshWeapons();
         setTimeout(() => setSuccess(''), 3000);
       } else {

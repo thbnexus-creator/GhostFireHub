@@ -1,3 +1,4 @@
+import { firebaseApi } from '../lib/firebaseApi';
 import React, { useState } from 'react';
 import { 
   User, 
@@ -56,7 +57,7 @@ export default function SharedProfileView({
     setCloneStatus(null);
 
     try {
-      const res = await fetch('/api/public-profile/clone', {
+      const res = await firebaseApi.request('public-profile/clone', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
